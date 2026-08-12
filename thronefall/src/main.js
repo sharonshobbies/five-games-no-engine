@@ -7,6 +7,7 @@ import { World } from './world.js';
 import { Hero, CMD_CATS } from './hero.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
+import { Music } from './music.js';
 import { applyLoadout, WEAPONS, PERKS, perkSlots } from './perks.js';
 import * as SaveMod from './save.js';
 
@@ -23,6 +24,8 @@ class Game {
     this.audio = new Audio();
     this.save = SaveMod.load();
     this.audio.enabled = true;
+    this.music = new Music(this.audio);
+    this.music.enabled = this.save.musicOn !== false;
     this.state = 'title';
     this.world = null;
     this.hero = null;
@@ -40,6 +43,7 @@ class Game {
     addEventListener('resize', () => this.resize());
     document.getElementById('muteBtn').textContent = 'Sound: ' + (this.save.volume > 0 ? 'on' : 'off');
     document.getElementById('volBtn').textContent = document.getElementById('muteBtn').textContent;
+    this.hud.syncMusicButtons();
     this.show('title');
   }
 
@@ -51,9 +55,23 @@ class Game {
     this.cam.resize(w, h);
   }
 
+  /**
+   * Browsers refuse to start an AudioContext before a gesture, so every input
+   * path funnels through here: resume the context, then push the persisted music
+   * setting onto the bus, which only exists once the context has been built.
+   */
+  wakeAudio() {
+    this.audio.resume();
+    if (this.audio.musicBus && !this.audioWoken) {
+      this.audioWoken = true;
+      this.music.setEnabled(this.music.enabled);
+    }
+  }
+
   // ------------------------------------------------------------ input
   bindInput(canvas) {
     addEventListener('keydown', (e) => {
+      this.wakeAudio();
       if (KEYMAP[e.code]) { this.input[KEYMAP[e.code]] = 1; e.preventDefault(); }
       if (e.code === 'Space') {
         e.preventDefault();
@@ -137,7 +155,7 @@ class Game {
       e.preventDefault();
     }, { passive: false });
     canvas.addEventListener('pointerdown', (e) => {
-      this.audio.resume();
+      this.wakeAudio();
       if (this.state !== 'play' || this.paused) return;
       // middle mouse is the original's other command binding
       if (e.button === 1 && this.hero) {
@@ -246,9 +264,10 @@ class Game {
     this.state = name;
     this.hud.showScreen(name);
     if (name !== 'play') this.ensureShowcase();
-    if (name === 'levels') { this.hud.renderLevels(); this.audio.music('day'); }
+    if (name === 'levels') { this.hud.renderLevels(); this.music.setScene('realm'); }
     if (name === 'loadout') this.hud.renderLoadout();
-    if (name === 'title') this.audio.music('day');
+    if (name === 'title') this.music.setScene('realm');
+    if (name === 'trial') this.music.setScene('realm');
   }
 
   /** A dressed, playable-looking keep used as the menu backdrop. */
@@ -352,7 +371,9 @@ class Game {
     this.R.applyNight(0, true);
     this.hud.showMutTags(muts);
     this.show('play');
-    this.audio.music('day');
+    this.music.setNight(1);
+    this.music.setIntensity(0);
+    this.music.setScene('day');
     this.hud.toast(`${cfg.name} — ${cfg.nights} nights to hold`, 3.4);
     this.previewNight();
     this.paused = false;
@@ -370,7 +391,15 @@ class Game {
     this.hud.closeBuild();
     w.startNight(this.pendingWave || waveFor(w.level, w.night + 1, w.mods), this.hero);
     this.nightTarget = 1;
-    this.audio.music('night');
+    // The last night of a level is the one waveFor() adds the boss to, so it is
+    // also the one that gets the boss arrangement.
+    const bossNight = w.night >= w.level.cfg.nights;
+    this.music.setNight(w.night);
+    this.music.setIntensity(0.2);
+    // A drum pickup runs up to the next bar line and the cut lands on it, so
+    // nightfall arrives on a downbeat rather than wherever Enter was pressed.
+    this.music.cueTransition();
+    this.music.setScene('nightfall', { then: bossNight ? 'boss' : 'night' });
     this.hud.toast(`Night ${w.night} falls`, 2.2);
   }
 
@@ -415,7 +444,9 @@ class Game {
       this.persist();
     }
     this.audio.play(won ? 'win' : 'lose');
-    this.audio.music('day');
+    // The sting plays two bars and hands back to the realm theme on its own.
+    this.music.setIntensity(0);
+    this.music.setScene(won ? 'victory' : 'defeat');
     if (this.trials && won) {
       // straight into the next stage draft
       this.hud.renderResult(true, w, xpGain, extra);
@@ -438,9 +469,36 @@ class Game {
     this.hud.closeBuild();
   }
 
+  /**
+   * How hard the night is going, 0..1 — the score's one continuous input.
+   *
+   * Three things push it up: enemies actually on the field (measured against a
+   * third of the wave being out at once, which is already a bad night), how much
+   * of the wave is still to come, and how close the keep is to falling. The keep
+   * term is weighted hardest and curved so the first chip of damage is heard.
+   * Clearing the field walks the value back down, so the tail of a night relaxes.
+   */
+  musicIntensity() {
+    const w = this.world;
+    if (!w || w.phase !== 'night') return 0;
+    const total = Math.max(1, w.totalToSpawn || 1);
+    const alive = Math.max(0, w.enemyCount || 0);
+    const queued = w.spawnQueue ? w.spawnQueue.length : 0;
+    const field = Math.min(1, alive / Math.max(4, total * 0.3));
+    const remaining = Math.min(1, (alive + queued) / total);
+    const hpFrac = w.castle.maxHp > 0 ? w.castle.hp / w.castle.maxHp : 1;
+    const danger = Math.pow(Math.max(0, 1 - hpFrac), 0.7);
+    const nights = Math.max(1, w.level.cfg.nights - 1);
+    const late = 0.12 * ((w.night - 1) / nights);
+    const v = 0.16 + 0.44 * field + 0.18 * remaining + 0.58 * danger + late;
+    return v < 0 ? 0 : (v > 1 ? 1 : v);
+  }
+
   // ------------------------------------------------------------ loop
   frame(dt) {
     const playing = this.state === 'play' && this.world && !this.paused;
+    if (playing) this.music.setIntensity(this.musicIntensity());
+    this.music.update(dt);
     if (playing) {
       const w = this.world;
       // day/night lighting blend
@@ -494,7 +552,8 @@ class Game {
       if (w.phase === 'day' && this.nightTarget === 1) {
         // dawn just broke
         this.nightTarget = 0;
-        this.audio.music('day');
+        this.music.setIntensity(0);
+        this.music.setScene('day');
         this.hud.goldDelta(w.lastIncome || 0, w.lastLoot || 0);
         const done = w.lastResearch || [];
         if (done.length) {

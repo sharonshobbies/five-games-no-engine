@@ -16,6 +16,7 @@ import { Particles } from './particles.js';
 import { Pickups } from './pickups.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
+import { Music } from './music.js';
 import { Progress } from './progress.js';
 import { buildDayPalettes, gradePalette } from './palette.js';
 import { clamp, lerp } from './rng.js';
@@ -61,7 +62,10 @@ export class Game {
     this.pickups = new Pickups(this.terrain);
     this.hud = new Hud();
     this.audio = new Audio();
+    this.music = new Music(this.audio);
     this.progress = new Progress();
+    // The mute preference is persisted, so it survives a reload.
+    this.audio.setMusicMuted(this.progress.data.musicMuted);
 
     this.scene.add(this.sky.mesh);
     this.scene.add(this.dressing.group);
@@ -100,12 +104,40 @@ export class Game {
       this.mode = mode;
       this.nightMode = mode === 'night';
     };
+    this.hud.onMute = () => {
+      const m = !this.progress.data.musicMuted;
+      this.progress.data.musicMuted = m;
+      this.progress.save();
+      this.audio.setMusicMuted(m);
+      this.hud.setMuted(m);
+      // A press on the button is also the user gesture that unblocks the audio context,
+      // so unmuting from a cold page starts the tune rather than silently arming it.
+      if (!m) this.audio.ensure();
+    };
+    this.hud.setMuted(this.progress.data.musicMuted);
+
     this.gradedA = gradePalette(this.palettes[0], 0);
     this.gradedB = gradePalette(this.palettes[1], 0);
     this._resetRun();
     this.cam.xBiasFrac = 0.10;      // title framing: nest and sleeping bird, card-clear
     this.cam.snap(this.bird);
     this.hud.showTitle(this.progress);
+    this.music.setScene('title');
+  }
+
+  /**
+   * Which scene the tune should be playing, derived from the run rather than set at each
+   * transition — so it cannot get out of step with what is on screen. Fever outranks the
+   * time of day, because Fever is the moment the music exists to celebrate.
+   */
+  _musicScene() {
+    if (this.state === 'title') return 'title';
+    if (this.state === 'over') return 'summary';
+    if (this.racing) return 'race';
+    if (this.bird.fever) return 'fever';
+    if (this.darkness > 0.62) return 'night';
+    if (this.darkness > 0.24) return 'dusk';
+    return 'day';
   }
 
   _resetRun() {
@@ -156,7 +188,7 @@ export class Game {
       this.nightX = x - NIGHT_HEADSTART;
       this.lastIsland = idx;
       this.run.islands = idx + 1;
-      this.audio.setChord(idx);
+      this.music.setIsland(idx);
     }
     if (this.dbg.catchSoon) this.nightX = this.bird.x - 260;
     if (this.dbg.fever) { this.bird.chain = 3; this.bird.fever = true; this.feverWas = true; }
@@ -225,6 +257,11 @@ export class Game {
     this.time += dt;
     dt = Math.min(dt, 1 / 25);
 
+    // The sequencer runs on the audio clock, so it needs the real frame delta only to
+    // ease its layer gains. It no-ops until the context exists, which is on first input.
+    this.music.setScene(this._musicScene());
+    this.music.update(dt);
+
     if (this.state === 'playing') {
       this._simulate(dt);
     } else {
@@ -276,7 +313,7 @@ export class Game {
         this.award(50, `ISLAND ${island + 1}`, bird.x, bird.y + 40, 'small');
       }
       this.audio.island();
-      this.audio.setChord(island);
+      this.music.setIsland(island);   // same tune, new key — lands on the next bar line
       this.cam.kick(0.25);
       this.particles.burst(bird.x, bird.y, 16, [1, 0.95, 0.6], 260);
     }

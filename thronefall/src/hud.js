@@ -41,7 +41,7 @@ export class Hud {
 
   wire() {
     const g = this.g;
-    $('playBtn').onclick = () => { g.audio.resume(); g.show('levels'); };
+    $('playBtn').onclick = () => { g.wakeAudio(); g.show('levels'); };
     $('howBtn').onclick = () => $('howText').classList.toggle('hidden');
     $('muteBtn').onclick = () => {
       g.save.volume = g.save.volume > 0 ? 0 : 0.5;
@@ -51,6 +51,17 @@ export class Hud {
       g.persist();
     };
     $('volBtn').onclick = $('muteBtn').onclick;
+    // The score has its own toggle: some players want the effects and none of
+    // the music. Both copies of the button drive the same persisted flag.
+    const toggleMusic = () => {
+      g.save.musicOn = !(g.save.musicOn !== false);
+      g.wakeAudio();
+      g.music.setEnabled(g.save.musicOn);
+      this.syncMusicButtons();
+      g.persist();
+    };
+    $('musicBtn').onclick = toggleMusic;
+    $('musicBtn2').onclick = toggleMusic;
     $('backTitle').onclick = () => g.show('title');
     $('backLevels').onclick = () => g.show('levels');
     $('startRun').onclick = () => g.startRun();
@@ -61,6 +72,13 @@ export class Hud {
     $('resRetry').onclick = () => g.startRun();
     $('resMap').onclick = () => g.show('levels');
     $('ability').onclick = () => { if (g.hero) g.hero.useAbility(); };
+  }
+
+  syncMusicButtons() {
+    const on = this.g.save.musicOn !== false;
+    const label = 'Music: ' + (on ? 'on' : 'off');
+    $('musicBtn').textContent = label;
+    $('musicBtn2').textContent = label;
   }
 
   // ------------------------------------------------------------- screens

@@ -17,10 +17,24 @@ import { SEA_LEVEL } from './terrain.js';
 import { clamp } from './rng.js';
 
 export const G = 620;              // base gravity (world units / s^2)
-export const DIVE_MUL = 4.0;       // gravity multiplier while holding
-const AIR_DRAG = 0.055;            // per second, applied to velocity magnitude in air
+export const DIVE_MUL = 4.0;       // gravity multiplier while holding, ON A DOWNSLOPE
+// ...and while holding UP a slope. Between the two it blends over the first 0.25 of
+// slope. See the long note at the use site: this is what lets a player who just holds the
+// button get off the ground at all, without turning holding into the optimal play.
+export const DIVE_MUL_CLIMB = 1.6;
+// ...and a much smaller one in the AIR. These used to be the same number, and that was
+// the second half of why the game did not read as flying. On the ground the ×4 is the
+// whole pump: hold down a slope to gain 4·g·h, release on the way up to give back only
+// 1·g·h. In the air it does nothing for the pump and everything against the arc — a bird
+// holding the button mid-flight fell under 2480 units/s² and was back on the grass in
+// 0.27 s. Since the one control the player has is "hold", and the instinct while airborne
+// is to keep holding, every arc a new player produced was cancelled by their own input.
+// At 2.2 a held arc lasts ~0.4 s instead, and releasing still doubles it — the aim-your-
+// landing tap stays useful without being a self-inflicted ground slam.
+export const DIVE_MUL_AIR = 2.2;
+const AIR_DRAG = 0.044;            // per second, applied to velocity magnitude in air
 const AIR_DRAG_DIVE = 0.018;       // tucked = slipperier
-const GLIDE_LIFT = 118;            // gentle upward push when falling with wings out
+const GLIDE_LIFT = 170;            // gentle upward push when falling with wings out
 // Friction along the surface. This trio is where the whole skill curve lives: pressing
 // down on a DOWNSLOPE tucks the bird and it barely scrubs at all, but pressing down on
 // an UPSLOPE drives it into the hill and bleeds speed hard. Diving is therefore not a
@@ -105,10 +119,26 @@ export class Bird {
    */
   step(dt) {
     const t = this.t;
-    const gEff = G * (this.diving ? DIVE_MUL : 1);
 
     if (this.grounded) {
       const s = t.slope(this.x);
+      // Dive gravity, softened on the way UP. The full ×4 on a downslope is the pump;
+      // applying that same ×4 to the climb meant a bird that never let go could not carry
+      // speed over a hill AT ALL — it ground to the crawl speed at every crest, and since
+      // a launch needs v²·|κ| to beat gravity plus adhesion, it could never leave the
+      // ground anywhere. Holding the one button you have and never flying is exactly the
+      // complaint this is fixed for.
+      //
+      // Releasing is still strictly better, and the energy accounting is why: over a
+      // valley the releaser gains 4·g·h going down and gives back only 1·g·h climbing,
+      // netting +3·g·h, while a holder nets (4 − 1.6)·g·h = +2.4·g·h and pays the plow
+      // friction (1.05 vs 0.46) on top. Measured over eight seeds, constant hold reaches
+      // 813 m against diving's 2434 m — it got FURTHER from optimal, not closer, because
+      // a holder that now launches also now spends time in the air and scrubs speed on
+      // every landing. It flies a little and travels less, which is the shape you want.
+      const gEff = this.diving
+        ? G * (DIVE_MUL + (DIVE_MUL_CLIMB - DIVE_MUL) * clamp(s * 4, 0, 1))
+        : G;
       const inv = 1 / Math.sqrt(1 + s * s);          // = cos(theta)
       // signed speed along the tangent, tangent = (1, s) * inv
       let vt = this.vx * inv + this.vy * (s * inv);
@@ -164,7 +194,10 @@ export class Bird {
     }
 
     // ---------------- airborne ----------------
-    this.vy -= gEff * dt;
+    // Note the separate multiplier: holding in the air steepens the descent for aiming a
+    // landing, but does not slam the bird down hard enough to erase the arc.
+    const gAir = G * (this.diving ? DIVE_MUL_AIR : 1);
+    this.vy -= gAir * dt;
     if (!this.diving && this.vy < 0) {
       // tiny wings still catch a little air on the way down
       this.vy += GLIDE_LIFT * dt * clamp(this.speed / 300, 0.25, 1.1);

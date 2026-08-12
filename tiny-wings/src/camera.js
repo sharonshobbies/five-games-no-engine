@@ -11,8 +11,12 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { clamp, lerp } from './rng.js';
 
-const BASE_W = 272;      // world units of hill visible at rest
-const MAX_W = 760;
+// Both of these were scaled up with the hills (see HILL_SCALE in terrain.js). Reading the
+// crest ahead is what lets a player time the release, so the view has to keep showing
+// about as much hill as it used to; and arcs now peak 180–200 units above the ground, so
+// the zoom-out ceiling has to be high enough to frame a whole launch.
+const BASE_W = 330;      // world units of hill visible at rest
+const MAX_W = 900;
 const MIN_H = 150;       // ultrawide gets extra width rather than a letterbox slot
 
 export class FollowCam {
@@ -64,7 +68,7 @@ export class FollowCam {
     this.targetWidth = clamp(
       BASE_W
       + clamp((sp - 330) / 900, 0, 1) * 300
-      + clamp((alt - 55) / 250, 0, 1) * 300,
+      + clamp((alt - 60) / 320, 0, 1) * 340,
       BASE_W, MAX_W,
     );
     this.w = lerp(this.w, this.targetWidth, Math.min(1, dt * 2.2));

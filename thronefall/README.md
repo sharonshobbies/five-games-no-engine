@@ -1,8 +1,9 @@
 # Thronefall — a from-scratch browser recreation
 
 A recreation of Grizzly Games' **Thronefall** (2023) in vanilla ES modules and three.js r169.
-No build step, no bundler, no framework, no downloaded assets. Every mesh, every colour and every
-sound is generated in code at load time.
+No build step, no bundler, no framework, no downloaded assets. Every mesh, every colour, every sound
+effect and the whole score are generated in code — the music is a step sequencer over synth voices
+running on the audio clock, not a loop played back.
 
 ## Running it
 
@@ -121,7 +122,9 @@ income, not the structure.
 | `art_buildings.js`, `art_units.js` | procedural meshes |
 | `geo.js`, `fx.js` | geometry merging/outlines, particles, health bars, rain |
 | `overworld.js` | the drawn realm map: landmass, biomes, facets, roads, keeps |
-| `hud.js`, `save.js`, `audio.js` | DOM, localStorage, WebAudio synthesis |
+| `hud.js`, `save.js` | DOM, localStorage |
+| `audio.js` | sound effects and the bus layout, synthesised per shot |
+| `music.js` | the score: a lookahead step sequencer over synth voices |
 
 ### Getting the minimalist look
 
@@ -173,6 +176,56 @@ Layered on top:
   wall they were chewing on, double their speed and charge the keep, with a rising smoke signal
   marking each one. A 30 s backstop clears any that still cannot reach. Without this a single
   peasant with 1 damage can hold an iron gate — and the night — open indefinitely.
+
+### The score
+
+`music.js` is a **step sequencer over synthesised voices, scheduled against the audio clock**. No
+sample files, no `setTimeout`: each frame the sequencer queues every sixteenth that falls inside a
+0.35 s lookahead window and stamps it with an explicit `AudioContext` time. Frame rate has no effect
+on timing, which matters at 130 enemies — a dropped frame delays the next *queueing pass*, never a
+note. A tab stall is caught by a guard that re-bases the clock instead of firing a backlog.
+
+Every scene is a 2- or 4-bar phrase: 16-step patterns for bass, arpeggio and melody, one chord per
+bar, a drum kit, and a target gain per layer. Layers are always sequenced, so a layer at gain 0 is
+silent but still running and a scene change is a crossfade rather than a restart. **Pattern swaps,
+key changes, tempo changes and scene changes only ever happen on a bar line.** The step duration is
+read before the swap, so the first step of a new scene lands exactly one old step after the last step
+of the old one — a tempo change leaves neither a gap nor an overlap.
+
+The whole score sits on one root, **D**, and moves by mode rather than by key:
+
+| Scene | Tempo | Mode | Sound |
+| --- | --- | --- | --- |
+| `realm` | 68 | D Aeolian | realm map, title, loadout. Solo lute over an open fifth and bowed strings. No percussion at all, so nothing implies a clock. |
+| `day` | 84 | D Dorian | build phase. Same root, raised sixth — one note brighter than the realm. Running lute figure, walking bass, unhurried frame drum, a horn phrase every other bar. |
+| `nightfall` | 84 | D Aeolian | the cut. Two bars, hard in and hard out: war drums on the beat, a bell tolling the night, bass walking the descending tetrachord D–C–B♭–A. |
+| `night` | 96 | D Aeolian | combat. Three pattern tiers by intensity. Bass ostinato, horn melody, drums escalating from frame to war. |
+| `boss` | 108 | D Phrygian | the final night. Flattened second, choir, war drums on every beat, the fastest tempo in the score. |
+| `victory` | 96 | D Mixolydian | two bars. Major third, flat seventh — bright without a key the rest of the score never visits. Bells and a rising arpeggio. |
+| `defeat` | 60 | D Phrygian | two bars, half the tempo of anything else. One war drum a bar, a bell tolling down the Phrygian cadence A–E♭–D. |
+
+Because the root never moves, every transition is consonant with the one before it and the drama
+comes from mode, tempo and instrumentation. Twelve voices carry it: plucked bass, lute, reed horn,
+bell, bowed pad, drone, choir, low pulse, frame drum, war drum, tambourine and snare, with a short
+convolution tail fed only by the sustained and bell voices.
+
+Three details worth naming:
+
+- **The day→night cut is authored, not a fade.** Pressing Enter schedules a run-up — war-drum hits
+  accelerating into the next bar line plus a noise riser that arrives with it — and the scene snaps
+  on that downbeat. The transition therefore lands on a beat the player heard coming instead of
+  wherever the keypress happened to fall.
+- **The bell climbs with the night.** Its root rises one scale degree per night and stacks a fifth
+  and an octave on top, so the toll that opens night 7 is audibly higher than the one that opened
+  night 1.
+- **`nightfall`, `victory` and `defeat` are one-shots.** Each declares its length in bars and its
+  successor, and hands off on its own — nightfall to `night` or `boss`, the two stings back to
+  `realm`.
+
+Sound effects are unchanged and still live in `audio.js` on their own bus. Music has its own
+persisted toggle (**Music: on/off** on the title screen and in the pause menu, stored as `musicOn`),
+separate from the effects volume, and the context starts on first key or pointer input so autoplay
+rules never block it.
 
 ## Calls I made on my own
 

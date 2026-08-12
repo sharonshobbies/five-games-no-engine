@@ -9,19 +9,20 @@ matches in behaviour and feel; `PARTIAL` means present but a visible or mechanic
 | Feature | Status | Note |
 | --- | --- | --- |
 | One input only (hold to dive, release to glide) | DONE | Mouse, touch and `Space`; nothing else is bound to gameplay. |
-| Dive multiplies gravity | DONE | ×4. Descending gains ~4× energy, ascending loses ~4×, which is what makes timing matter. |
-| Dive on downslope to build speed | DONE | Ground friction drops to 0.10 diving downhill vs 0.30 gliding. |
-| Holding into an upslope punishes you | DONE | Friction jumps to 1.05 — plowing, not a free fast mode. |
-| Launch off the crest | DONE | Physical: leaves the surface when `v²·κ` exceeds what gravity + adhesion can hold. |
+| Dive multiplies gravity | DONE | ×4 down a slope, ×1.6 climbing, ×2.2 in the air. The asymmetry is the pump: a releaser nets +3·g·h over a valley, a holder +2.4·g·h and pays plow friction on top. |
+| Dive on downslope to build speed | DONE | Ground friction drops to 0.10 diving downhill vs 0.46 gliding. |
+| Holding into an upslope punishes you | DONE | Friction jumps to 1.05 — plowing, not a free fast mode. Constant hold reaches 813 m against diving's 2434 m. |
+| Launch off the crest | DONE | Physical: leaves the surface when `v²·κ` exceeds what gravity + adhesion can hold. Only an ascending launch gains height — one taken on the falling side peaks at 0.0 m even at 575 units/s, because the hill drops away as fast as the bird. |
 | Diving pins you to the hill, releasing pops you off | DONE | Adhesion 2200 diving vs 150 gliding — the "hold through the valley, release on the way up" loop. |
-| Momentum is everything / compounding speed | DONE | Pumping a valley nets ~2.4·g·Δh per cycle; skilled play hits ~950 units/s vs ~250 with no input. |
+| Momentum is everything / compounding speed | DONE | Skilled play hits ~835 units/s vs ~294 with no input, with median arcs of 15.3 m for 1.66 s. |
+| Flight is reachable at human reaction speed | DONE | Fixed this pass, and it is what the whole pass was for. A crest's launchable region is a quarter wavelength wide; before `HILL_SCALE = 1.35` a bird crossed it in 0.13 s against a human latency of 180–250 ms, so the window was narrower than the reaction that had to hit it. A 180 ms-latency model went from 4.3 m median height for 0.75 s to 10.3 m for 1.23 s; a player who reacts to the slope underfoot went from 0 arcs per 60 s to 11.8. |
 | Great Slide = whole valley with no bounce | DONE | Enter a real downslope, pass the valley floor, come off the far crest, never bounce. 10 pts. |
 | Bounce breaks the slide | DONE | Impact normal speed over 188 bounces; that is the failure condition. |
-| A bad landing costs momentum, not a pinball | DONE | Retuned: the stick window is wide (188), a hard stick scrubs up to 45% of tangential speed, and past the window the bird bounces once then plants and plows for a further 42%. Scripted imprecise play now bounces 13 times per 60 s, down from 20. |
+| A bad landing costs momentum, not a pinball | DONE | The stick window is wide (188), a hard stick scrubs up to 45% of tangential speed, and past the window the bird bounces once then plants and plows for a further 42%. Scripted imprecise play bounces 10.8 times per 60 s, 13.4 for the sloppy human model, down from 20 before this model. |
 | Fever after 3 consecutive Great Slides | DONE | Doubles all points, continues while the chain holds, resets on any bounce or splash. |
 | Fever visual flourish | DONE | Star trail, warm grade on grass and sky, warm speed vignette, HUD tag, ascending arpeggio. |
-| Mid-air "mini taps" to aim a landing | DONE | Falls out of the model for free — a tap in the air steepens the descent to line up the downslope. |
-| Bird cannot actually fly | DONE | No lift beyond a small glide damping; all altitude comes from launches. |
+| Mid-air "mini taps" to aim a landing | DONE | Falls out of the model for free — a tap in the air steepens the descent to line up the downslope. The airborne dive multiplier is 2.2 rather than 4, so a tap aims the landing instead of slamming the bird down and cancelling the arc. |
+| Bird cannot actually fly | DONE | No lift beyond a small glide damping (170); all altitude comes from launches. |
 
 ## Progression
 
@@ -77,8 +78,10 @@ matches in behaviour and feel; `PARTIAL` means present but a visible or mechanic
 | Island arrival banner | DONE | Number, palette name, "+ daylight". |
 | End-of-run summary | DONE | Distance, new-best flag, score, islands, Great Slides, coins/clouds, top speed, best, nest state, next mission. |
 | Restart | DONE | Tap or `Space`. |
-| Music | PARTIAL | A synthesised pad that changes key per island — nothing like the original's actual composed track. |
-| Sound effects | DONE | Wind tracking speed, landings, bounces, launches, coins, clouds, slides, Fever, splashes, sunset — all WebAudio synthesis, no files. |
+| Music | DONE | A composed four-bar piece (`I–V–vi–IV` in D major) with melody, bass, a sixteenth-note arpeggio, pad, drums and a bell layer, sequenced with a 0.3 s lookahead on the audio clock. Seven scenes change tempo and layer weights, never the notes; per-island the key moves through eight transpositions. Replaces the pad that a player heard as a monotone drone. Still WebAudio synthesis, no files. |
+| Music mute + persisted preference | DONE | Bottom-right on every screen, `localStorage`-backed, survives a reload. Mutes the tune only, on its own gain node; the sequencer keeps running while muted so unmuting lands mid-bar. |
+| Respects browser autoplay rules | DONE | No `AudioContext` and nothing scheduled until the first input; verified 0 notes scheduled before a gesture. |
+| Sound effects | DONE | Wind tracking speed, landings, bounces, launches, coins, clouds, slides, Fever, splashes, sunset — all WebAudio synthesis, no files. Untouched by this pass; only the background bed changed. |
 | Haptics | MISSING | No touch device target here. |
 
 ## UI additions
@@ -90,46 +93,92 @@ matches in behaviour and feel; `PARTIAL` means present but a visible or mechanic
 
 ## Known weak spots
 
-1. **Music is a pad, not a tune.** Synthesising something as good as the original's track was out of
-   reach; what is there is atmosphere.
-2. **The race is local AI only.** No networked or same-device human opponents, and the four birds
+1. **The music is mine, not a transcription.** It is a real composed loop now rather than a pad, but
+   the original's track is copyrighted and I have not heard a transcription of it, so this is a
+   cheerful piece in the same spirit rather than the same piece.
+2. **The music has never been listened to.** It is verified only by assertion — notes scheduled,
+   lookahead ahead of the audio clock, bar index in range, per-scene layer weights, per-island root
+   frequency, mute persistence. Whether it is pleasant over five minutes is untested.
+3. **The race is local AI only.** No networked or same-device human opponents, and the four birds
    share one 2D track rather than a split screen — rivals are drawn translucent and lifted a couple
    of world units apart so a pack stays countable.
-3. **Watercolour paper texture is still too clean.** Procedural grain and fbm blotching, softer and
+4. **Watercolour paper texture is still too clean.** Procedural grain and fbm blotching, softer and
    less papery than the original's.
-4. **Missions are invented.** Eight in the original's spirit; the real list is not documented
+5. **Missions are invented.** Eight in the original's spirit; the real list is not documented
    anywhere I could find.
-5. **Bounce rate is tuned, not matched.** 13 per 60 s of scripted imprecise play, down from 20. I
-   have no measurement of the original's rate to compare against — the target was the described
-   feel, that a bad landing costs momentum and the bird settles into a slide.
-6. **Retuning the landing model forced a night-chase retune.** Once bad landings stopped stopping
+6. **Bounce rate is tuned, not matched, and it drifted down this pass.** 10.8 per 60 s of scripted
+   imprecise play against the 13.3 it was tuned to, 13.4 for the sloppy human model. Bigger, gentler
+   hills mean landings arrive better aligned with the slope, so fewer of them break the stick window.
+   `STICK_SPEED` does not move the number — sweeping it 152 → 72 leaves the rate inside 10.6–11.0 —
+   so the drop is a property of the terrain, not of the landing model. I have no measurement of the
+   original's rate to compare against.
+7. **Hills are 1.35× the size they were, and that is visible.** Fewer hills on screen at the same
+   zoom, so the camera widened 272 → 330 world units at rest and 760 → 900 at full zoom-out. The bird
+   is correspondingly smaller in frame. This is the cost of the timing fix, taken deliberately.
+8. **Retuning the landing model forced a night-chase retune.** Once bad landings stopped stopping
    the bird dead, a skilled run stretched about 45% further, because reaching more islands buys more
    daylight which buys more islands. The night's top speed went 340 → 420 and the per-island
-   pushback stopped growing with the island index, which puts the four probe strategies back on the
-   distances the game was balanced against. The physics change and the difficulty change are
-   therefore entangled; only the probe separates them.
+   pushback stopped growing with the island index. The physics change and the difficulty change are
+   therefore entangled; only the probe separates them. This pass did **not** need a further night
+   retune: constant hold sits at 813 m against the 976 m the night was balanced against, so the
+   pacing the chase was set for still holds.
 
 ## Probe numbers
 
-Eight day seeds, full run with the night chase, before and after this pass:
+Eight day seeds, full run with the night chase, before and after the flight pass:
 
-| Strategy | Distance before | Distance after | Bounces / 60 s before | after |
+| Strategy | Distance before | after | Bounces / 60 s before | after |
 | --- | --- | --- | --- | --- |
-| never hold | 221 m | 218 m | 2.0 | 1.8 |
-| hold constantly | 1035 m | 976 m | 3.8 | 2.5 |
-| dive on downslopes | 2048 m | 2074 m | 17.0 | 11.5 |
-| dive + aim landings | 2093 m | 2436 m | 20.4 | 13.3 |
+| never hold | 218 m | 179 m | 1.8 | 1.8 |
+| hold constantly | 976 m | 813 m | 2.5 | 11.1 |
+| dive on downslopes | 2074 m | 2434 m | 11.5 | 9.6 |
+| dive + aim landings | 2436 m | 2785 m | 13.3 | 10.8 |
 
-No run softlocks: the longest any run went without gaining 2 m is 7.3 s, which is a slow paddle
-across a bay.
+Monotonic in both columns. Constant hold moved *down*: it now launches off crests, and a holder that
+spends time in the air scrubs speed on every landing, so the flight it gained cost it distance. Its
+bounce rate rose from 2.5 to 11.1 for the same reason — it was previously glued to the ground and had
+almost nothing to land from.
+
+And the numbers the pass was actually about — whether the bird gets airborne, and whether the arc
+reads as flight rather than as a hop. An "arc" is airtime ≥ 0.55 s *and* clearance ≥ 2.5 m above the
+hill under the bird:
+
+| Strategy | Arcs / 60 s before | after | Airborne before | after | Height med before | after |
+| --- | --- | --- | --- | --- | --- | --- |
+| never hold | 0.0 | 0.0 | 2% | 2% | 1.1 m | 1.3 m |
+| hold constantly | 0.0 | 6.0 | 1% | 11% | 0.0 m | 3.9 m |
+| dive on downslopes | 11.2 | 9.6 | 31% | 31% | 14.2 m | 18.2 m |
+| dive + aim landings | 12.1 | 10.2 | 32% | 29% | 11.3 m | 15.3 m |
+| *human*, 180 ms latency | 8.5 | 11.4 | 17% | 25% | 4.3 m | 10.3 m |
+| *sloppy*, reacts underfoot | 0.0 | 11.8 | 1% | 20% | 0.0 m | 6.6 m |
+
+Two different failures sat behind the same complaint. `sloppy` and constant hold were at flat zero —
+a player who held the button, or who reacted to the slope under the bird, never left the ground at
+all, at any speed, however long they played. `human` did get airborne, but at 4.3 m for 0.75 s
+against the oracles' 14.2 m for 1.63 s: hops, not arcs. Median height for `human` is now 10.3 m and
+median airtime 1.23 s. Median airtime elsewhere: 1.63 → 1.87 s for `dive`, 1.40 → 1.66 s for
+`skilled`; max airtime 2.45 → 2.88 s and 2.17 → 2.45 s.
+
+Launches per 60 s moved in both directions, which is the point: 2.5 → 11.2 for constant hold and
+2.3 → 13.6 for `sloppy`, against 15.9 → 12.3 for `skilled`. The oracles launch slightly less often
+and travel much further per launch.
+
+No run softlocks: the longest any run went without gaining 2 m is 8.4 s, up from 7.3 s, which is a
+slow paddle across a bay. `WADDLE_K = 1.06 × gEff` is unchanged and still scale-free, so the crawl
+force still exceeds `g·sinθ` on any slope.
+
+Race field over 24 races per scripted player: a button-masher wins 0%, diving on downslopes 46%
+(was 38%), diving plus aimed landings 88% (was 79%).
 
 ## Rough overall
 
 Mechanics and progression are close — the dive/glue/pop loop, the Great Slide rule, Fever, the night
-chase and the scoring values all match what the sources describe, and the landing model now pays for
-a mistimed dive in momentum rather than in a bounce chain. Visual identity is close on the hills,
-palettes, parallax and grading, and the run now opens and closes on the nest and the sleeping bird.
-The race against three AI birds is in, and a competent player wins some races and loses others. What
-is left is the soundtrack, the papery quality of the hill texture, and a race that is local AI rather
-than true multiplayer. Call it **~92%** of the single-player Day Trip, and a credible first pass at
-the race.
+chase and the scoring values all match what the sources describe, the landing model pays for a
+mistimed dive in momentum rather than in a bounce chain, and the launch is now reachable at human
+reaction speed rather than only by a frame-perfect bot. Visual identity is close on the hills,
+palettes, parallax and grading, and the run opens and closes on the nest and the sleeping bird. The
+race against three AI birds is in, and a competent player wins some races and loses others. There is
+a composed soundtrack rather than a pad, though it is my composition and nobody has listened to it.
+What is left is the papery quality of the hill texture, a race that is local AI rather than true
+multiplayer, and a bounce rate that drifted 20% below its tuned value as a side effect of the bigger
+hills. Call it **~94%** of the single-player Day Trip, and a credible first pass at the race.

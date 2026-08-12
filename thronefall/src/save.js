@@ -13,6 +13,7 @@ const DEFAULT = {
   perks: [],
   mutators: [],
   volume: 0.5,
+  musicOn: true,        // the score's own toggle, separate from the sfx volume
 };
 
 export function load() {

@@ -14,7 +14,8 @@ python3 -m http.server 8080
 Then open <http://localhost:8080>. Any static file server works; it must be served over HTTP
 (ES modules will not load from `file://`).
 
-**Controls: one input.** Hold mouse / touch / `Space` to dive. That's the whole game.
+**Controls: one input.** Hold mouse / touch / `Space` to dive. That's the whole game. A mute button
+for the music sits in the bottom-right corner.
 
 ## How to play
 
@@ -65,30 +66,55 @@ needs both, and a crease would catch the slide. Islands get longer wavelengths a
 the run goes on, but the amplitude/wavelength ratio only creeps up, so slopes stay slideable rather
 than turning into cliffs. Each island's length is snapped so its trailing edge lands on a *trough*
 of the primary sine: the last hill then flows continuously down into the bay instead of ending in
-an unclearable drop.
+an unclearable drop. One `HILL_SCALE` multiplies wavelength, amplitude, island length and the
+coin/cloud layout together, so the terrain stays self-similar and only its size changes; the physics
+section below is why it is 1.35 rather than 1.
 
 **Physics** (`src/physics.js`) — a point mass with two regimes.
 
-- *Airborne*: free body, gravity plus light air drag, and a whisper of glide lift on the way down.
+- *Airborne*: free body, gravity plus light air drag (0.044), and a whisper of glide lift (170) on
+  the way down.
 - *Grounded*: the bird is constrained to the surface and driven by the along-slope component of
   gravity, so diving on a downslope is pure acceleration. It leaves the ground when the surface
   curves away faster than it can be held: `v² · |κ| > g_eff · cosθ + adhesion`.
 
-Holding the button does three things at once, and that trio is the entire skill curve:
+Holding the button does four things at once, and that set is the entire skill curve:
 
-1. multiplies gravity (×4), so descending gains ~4× the energy — and ascending loses ~4×;
-2. swaps ground friction from 0.46 to 0.10 on a downslope but to **1.05 on an upslope**, so diving
+1. multiplies gravity by 4 on a downslope, so descending gains 4× the energy;
+2. multiplies it by only **1.6 while climbing**, blended over the first 0.25 of slope. Releasing
+   pays 1×, so over a valley a releaser nets +3·g·h against a holder's +2.4·g·h, and the holder
+   pays the plow friction below on top of that;
+3. swaps ground friction from 0.46 to 0.10 on a downslope but to **1.05 on an upslope**, so diving
    is not a free "fast mode", it is a choice you time against the terrain;
-3. raises surface adhesion from 150 to 2200, pinning the bird to the hill — so you hold through a
+4. raises surface adhesion from 150 to 2200, pinning the bird to the hill — so you hold through a
    valley to stay glued and gaining, then release so you pop off the far crest.
+
+In the air the dive multiplier is a separate, much smaller **2.2** (`DIVE_MUL_AIR`). Holding
+mid-flight steepens the descent enough to aim a landing without erasing the arc.
+
+**Only an ascending launch buys altitude**, and that measured fact drives most of the tuning above.
+A launch taken on the falling side of a crest is a skim: over eight seeds those peak at 0.0 m above
+the ground even at 575 units/s, because the hill drops away as fast as the bird does. Launches taken
+while the bird is still climbing peak at 3.6 m at 217 units/s and 14.4 m at 524 units/s. Height is
+therefore set by *speed at the moment of an ascending launch*, which is why carrying momentum up the
+hill matters more than anything that happens at the crest itself.
+
+The hills are scaled by a single `HILL_SCALE = 1.35` in `terrain.js` — wavelength, amplitude, island
+length and the coin/cloud layout all ride it. The reason is timing, not looks. A crest's launchable
+region (negative curvature) is about a quarter wavelength wide, so before the scale-up a bird
+crossing it at 600 units/s had 0.13 s in which releasing would throw it into the air, against a
+human reaction latency of 180–250 ms. The window was narrower than the reaction that had to hit it.
+Scaling lengths by *k* leaves the launch test itself alone (hill height grows as *k* so `v²` grows as
+*k*, while crest curvature falls as `1/k`, and the two cancel), widens the window as `√k`, and makes
+the arc *k* times taller. The camera scaled with it: 330→900 world units of width, from 272→760.
 
 **Landing** is where a mistimed dive gets paid for, and it is paid in momentum rather than in
 bounces. Impacts up to 188 units/s into the surface *stick*; above 56 the stick still scrubs
 tangential speed, ramping to 45% at the edge of that window. Past the window the bird bounces
 exactly **once**, and the landing that follows plants and plows, losing a further 42%. So a bad
 landing costs you your slide chain and a big bite of your speed, but the bird settles into a slide
-instead of pinballing down the hill (measured: 13 bounces per 60 s of scripted imprecise play,
-down from 20 before this model).
+instead of pinballing down the hill (measured: 10.8 bounces per 60 s of scripted imprecise play,
+13.4 for the sloppy human model, down from 20 before this model).
 
 A **Great Slide** is tracked exactly as the original describes it: enter a real downslope, ride
 through the valley floor and up the far side without ever bouncing, and come off the crest. A
@@ -110,16 +136,46 @@ eight day seeds:
 
 | Input | Survives | Distance | Islands | Bounces / 60 s | Longest stall |
 | --- | --- | --- | --- | --- | --- |
-| never hold | 31 s | 218 m | 1.5 | 1.8 | 1.9 s |
-| hold constantly | 95 s | 976 m | 5.0 | 2.5 | 2.4 s |
-| dive on downslopes | 156 s | 2074 m | 9.0 | 11.5 | 7.3 s |
-| dive + aim landings | 173 s | 2436 m | 10.1 | 13.3 | 6.5 s |
+| never hold | 25 s | 179 m | 1.0 | 1.8 | 1.5 s |
+| hold constantly | 77 s | 813 m | 3.1 | 11.1 | 3.8 s |
+| dive on downslopes | 166 s | 2434 m | 8.1 | 9.6 | 7.8 s |
+| dive + aim landings | 181 s | 2785 m | 9.0 | 10.8 | 8.4 s |
+| *human* (180 ms latency) | 117 s | 1451 m | 5.4 | 11.7 | 5.1 s |
+| *sloppy* (reacts underfoot) | 72 s | 731 m | 3.0 | 13.4 | 4.6 s |
 
 "Longest stall" is the worst time any run went without gaining 2 m — the softlock watch. It never
 exceeds the length of a slow paddle across a bay.
 
+The last two rows matter more than the first four, because the first four cannot be played. `dive`
+and `skilled` are frame-perfect oracles: they read the exact slope and act on it the same frame.
+`human` decides eight times a second from a view of the world 180 ms stale and looks 40 units ahead;
+`sloppy` is the same latency reacting to the slope under the bird, which is what a player does before
+working out that the release has to be early. Distance alone hid the bug this pass fixed. The oracles
+were flying 14.2 m arcs; `human` was managing 4.3 m hops, and `sloppy` and constant hold never left
+the ground at all.
+
+So the probe also reports flight directly. An "arc" is airtime ≥ 0.55 s *and* clearance ≥ 2.5 m
+above the hill under the bird — a hop of a tenth of a second half a bird-height off the grass is
+technically airborne and reads as nothing:
+
+| Input | Launches / 60 s | Arcs / 60 s | Airborne | Airtime med / max | Height med / max |
+| --- | --- | --- | --- | --- | --- |
+| never hold | 2.1 | 0 | 2% | 0.48 s / 0.62 s | 1.3 m / 2.4 m |
+| hold constantly | 11.2 | 6.0 | 11% | 0.56 s / 1.42 s | 3.9 m / 8.8 m |
+| dive on downslopes | 10.8 | 9.6 | 31% | 1.87 s / 2.88 s | 18.2 m / 40.1 m |
+| dive + aim landings | 12.3 | 10.2 | 29% | 1.66 s / 2.45 s | 15.3 m / 31.4 m |
+| *human* | 13.0 | 11.4 | 25% | 1.23 s / 2.30 s | 10.3 m / 21.3 m |
+| *sloppy* | 13.6 | 11.8 | 20% | 0.88 s / 1.58 s | 6.6 m / 12.5 m |
+
+Constant hold is the row to watch in both tables at once. It now flies — 6 arcs a minute, 3.9 m up —
+and it goes the *shortest* distance of any strategy that touches the button, 813 m against diving's
+2434 m. A holder that launches also spends time in the air and scrubs speed on every landing, so
+giving it flight cost it distance. That is the shape to preserve: never holding is worthless, holding
+is visibly alive and still bad, and timing the release is worth 3×.
+
 `node tools/probe.mjs --race` runs the race course instead, and is how the rival skill levels were
-set: it reports what place a scripted player of each strategy finishes in.
+set: it reports what place a scripted player of each strategy finishes in. Over 24 races a
+button-masher wins 0%, a player who dives on downslopes 46%, one who also aims landings 88%.
 
 **Night chase** (`src/game.js`) — a wall of night advances from the left at 108 world units/s,
 ramping to 420. Reaching a new island pushes it back 980 units ("every island you pass sets the
@@ -175,9 +231,44 @@ plus a tapered lens quad trailing along the direction of travel. Both fade in fr
 cap low — real play tops out near 750, so the ramp is set against that rather than against the
 speed limit. Below the threshold the meshes are invisible and cost nothing.
 
-**Audio** (`src/audio.js`) — WebAudio synthesis only. Filtered-noise wind whose gain and cutoff
-track speed, a three-oscillator pad that changes key per island, and one-shots for landings,
-bounces, launches, coins, cloud touches, Great Slides, Fever, splashes and the sunset.
+**Audio** (`src/audio.js`) — WebAudio synthesis only, no sample files. Filtered-noise wind whose gain
+and cutoff track speed, plus one-shots for landings, bounces, launches, coins, cloud touches, Great
+Slides, Fever, splashes and the sunset. Sound effects go to the master; the music has its own gain
+node one level above it (`musicBus`), so muting the tune leaves the wind and every one-shot alone.
+
+**Music** (`src/music.js`) — one composed four-bar piece, sequenced with a 0.3 s lookahead against
+`AudioContext.currentTime`, so it does not drift or stutter with the frame rate. What was here before
+was a three-oscillator pad holding a triad and changing key per island; a player called it "an
+annoying monotone sound", which is a fair description of a sustained chord.
+
+The piece is `I – V – vi – IV` in D major (D, A, Bm, G), with six layers:
+
+| Layer | What it plays |
+| --- | --- |
+| bass | root-and-fifth bounce, one chord per bar, an octave down |
+| arp | a sixteenth-note arpeggio over the chord tones — the layer that carries the movement |
+| lead | the tune: F#-A-B-A / A-C#-B / F#-A-B-D / C#-B-A-F#-D |
+| pad | the chord itself, struck once a bar underneath |
+| drum | kick, hat, light clap |
+| shine | a high bell on the bar line, Fever's sparkle |
+
+The melody peaks on the high D in bar three and resolves to the tonic at the end of bar four, so the
+loop hands back to bar one without a seam. Nothing is ever cut: every voice owns a gain envelope that
+starts and ends at silence, which is what keeps the loop point and every transition free of clicks.
+
+Seven **scenes** — title, day, fever, dusk, night, race, summary — change the tempo (96–128 bpm) and
+which layers are audible, never the notes. So the title screen, a run, Fever and the summary card are
+one song at different weights rather than five songs. Layer gains ease every frame, so a scene change
+is a crossfade and a silent layer is still being sequenced underneath; tempo and pattern swaps are
+deferred to the next bar line. Which scene plays is derived from run state every frame rather than
+set at each transition, so it cannot desync from what is on screen. Fever outranks the time of day.
+
+Per **island** the key moves through eight near-relative transpositions and comes back to D
+(110–220 Hz, measured), and the arp thickens with the island index. Same tune, new key.
+
+Audio starts on the first input, never on load, so it respects browser autoplay rules. A **mute
+button** sits bottom-right on every screen and the preference persists in `localStorage`; it mutes
+the music only, and the sequencer keeps running while muted so unmuting lands mid-bar cleanly.
 
 ## Scoring
 
@@ -215,7 +306,8 @@ in `localStorage` along with your best distance and score.
 | `src/particles.js`, `src/points.js` | pooled GPU point sprites for puffs and sparkles |
 | `src/pickups.js` | coins and cloud touches |
 | `src/hud.js` | DOM readouts, meters, popups, banners, screens |
-| `src/audio.js` | WebAudio synthesis |
+| `src/audio.js` | WebAudio sound effects, the wind layer and the mix buses |
+| `src/music.js` | the soundtrack: the piece, the scenes, the step sequencer |
 | `src/palette.js` | island palettes and the day→dusk→night grade |
 | `src/progress.js` | best scores, nest level, missions (localStorage) |
 | `src/textures.js` | every procedural canvas texture |

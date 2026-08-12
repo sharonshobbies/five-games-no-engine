@@ -9,7 +9,7 @@
 // D units behind the head" is an index lookup plus one lerp, not a search.
 
 import {
-  MAMU, NSP1, NSP2, SPANGDV, BOOST_MUL, MAX_SC, SC_TO_RADIUS, PART_SEP,
+  MAMU, NSP1, NSP2, NSP_FLAT, SPANGDV, BOOST_MUL, MAX_SC, SC_TO_RADIUS, PART_SEP,
   TRAIL_STEP, MAX_PARTS, BASE_PARTS, SC_PER_PART, START_MASS, TICKS_PER_SEC,
   PART_COEF, PART_EXP,
   BOOST_MIN_MASS, BOOST_MASS_PER_SEC, BOOST_ORB_MASS, BAND_UNITS,
@@ -99,9 +99,14 @@ export class Snake {
     return this.parts * this.partSep;
   }
 
-  /** [slither] ssp = nsp1 + nsp2 * sc; fsp = ssp + 0.1, per 8ms tick. */
+  /**
+   * [slither] ssp = nsp1 + nsp2 * sc; fsp = ssp + 0.1, per 8ms tick.
+   * Every term carries SPEED_SCALE (see config.js), including the flat one, so
+   * thickness still couples to speed in the same proportion it always did:
+   * 4.12/tick at sc 1 rising to 5.52 at the cap, a 34% spread either way.
+   */
   get baseSpeed() {
-    return NSP1 + NSP2 * this.sc + 0.1;
+    return NSP1 + NSP2 * this.sc + NSP_FLAT;
   }
 
   get speed() {

@@ -8,7 +8,7 @@ import { Hud } from './hud.js';
 import { Minimap } from './minimap.js';
 import { Screens } from './screens.js';
 import { Audio } from './audio.js';
-import { ARENA_R, BOT_COUNT } from './config.js';
+import { ARENA_R, BOT_COUNT, SPEED_SCALE } from './config.js';
 import { rgbToCss, clamp, TAU, randRange } from './math.js';
 
 const canvas = document.getElementById('gl');
@@ -176,7 +176,9 @@ function frame(now) {
   // ---- camera
   if (playing && player && player.alive) {
     cam.update(dt, player.x, player.y, player.sc, player.boosting);
-    audio.boost(player.boosting, clamp(player.speed / 12, 0.6, 1.4));
+    // The divisor is a speed, so it carries SPEED_SCALE: the sprint hiss keeps
+    // the exact intensity curve it had before the arena slowed down.
+    audio.boost(player.boosting, clamp(player.speed / (12 * SPEED_SCALE), 0.6, 1.4));
   } else {
     // Spectator drift: orbit the leader so the menu has something to watch.
     world.leaderboard(board);

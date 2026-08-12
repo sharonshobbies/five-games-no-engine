@@ -1,12 +1,16 @@
 // All sound is synthesised with WebAudio — no files. A continuous wind/whoosh layer
-// tracks speed, a soft pad chord shifts per island, and one-shots mark landings,
-// launches, coins, great slides and fever.
+// tracks speed, and one-shots mark landings, launches, coins, great slides and fever.
+//
+// This file owns the SOUND EFFECTS and the mix. The music is a separate sequencer in
+// music.js, which plays into `musicBus` — its own gain node, so the tune can be muted or
+// ducked without touching the wind or any of the one-shots.
 
 export class Audio {
   constructor() {
     this.ok = false;
     this.ctx = null;
     this.muted = false;
+    this.musicMuted = false;
   }
 
   ensure() {
@@ -37,6 +41,7 @@ export class Audio {
       last = last * 0.55 + w * 0.45;
       d[i] = last;
     }
+    this.noiseBuf = buf;              // music.js borrows this for hats and claps
     this.noise = c.createBufferSource();
     this.noise.buffer = buf;
     this.noise.loop = true;
@@ -49,40 +54,22 @@ export class Audio {
     this.noise.connect(this.windFilter).connect(this.windGain).connect(this.master);
     this.noise.start();
 
-    // ---- pad: three detuned saw-ish oscillators through a lowpass ----
-    this.padGain = c.createGain();
-    this.padGain.gain.value = 0.0;
-    this.padFilter = c.createBiquadFilter();
-    this.padFilter.type = 'lowpass';
-    this.padFilter.frequency.value = 900;
-    this.padGain.connect(this.padFilter).connect(this.master);
-    this.padOsc = [];
-    for (let i = 0; i < 3; i++) {
-      const o = c.createOscillator();
-      o.type = i === 2 ? 'triangle' : 'sine';
-      const g = c.createGain();
-      g.gain.value = 0.33;
-      o.connect(g).connect(this.padGain);
-      o.start();
-      this.padOsc.push(o);
-    }
-    this.setChord(0);
-    this.padGain.gain.setTargetAtTime(0.10, c.currentTime, 1.5);
+    // ---- music bus: everything music.js schedules lands here ----
+    // Its own gain, one node above the master, so muting or ducking the tune leaves the
+    // wind and the one-shots exactly where they were.
+    this.musicBus = c.createGain();
+    this.musicBus.gain.value = this.musicMuted ? 0 : 1;
+    this.musicBus.connect(this.master);
 
     this.ok = true;
     return true;
   }
 
-  setChord(islandIndex) {
+  /** Mute the tune only. The wind and every one-shot keep playing. */
+  setMusicMuted(m) {
+    this.musicMuted = !!m;
     if (!this.ok) return;
-    // a gentle major-ish triad that rotates through keys per island
-    const roots = [130.81, 146.83, 164.81, 174.61, 196.0, 110.0, 123.47, 138.59];
-    const r = roots[islandIndex % roots.length];
-    const freqs = [r, r * 1.5, r * 2.5];
-    const t = this.ctx.currentTime;
-    for (let i = 0; i < 3; i++) {
-      this.padOsc[i].frequency.setTargetAtTime(freqs[i], t, 0.8);
-    }
+    this.musicBus.gain.setTargetAtTime(this.musicMuted ? 0 : 1, this.ctx.currentTime, 0.12);
   }
 
   /** Continuous layer, called every frame. */
@@ -93,7 +80,6 @@ export class Audio {
     const g = s * s * (grounded ? 0.20 : 0.13);
     this.windGain.gain.setTargetAtTime(g, t, 0.08);
     this.windFilter.frequency.setTargetAtTime(320 + s * 2100 + (grounded ? 240 : 0), t, 0.08);
-    this.padFilter.frequency.setTargetAtTime(500 + (1 - dark) * 900, t, 1.0);
   }
 
   _env(node, t0, a, d, peak) {

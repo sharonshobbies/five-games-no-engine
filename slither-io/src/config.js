@@ -14,10 +14,36 @@ export const ARENA_R = 7000; // original: 21600
 export const BORDER_GLOW = 300; // width of the red danger band
 
 // ---------------------------------------------------------------- snake motion
-export const NSP1 = 5.39; // [slither] base node speed
-export const NSP2 = 0.4; // [slither] node speed per unit thickness
-export const SPANGDV = 4.8; // [slither] speed at which angular rate saturates
-export const MAMU = 0.033; // [slither] base angular speed, rad / 8ms
+//
+// The original's rates are quoted below at their real magnitudes and the whole
+// movement model is then scaled by SPEED_SCALE. At 1.0 the arena was faster
+// than it was comfortable to steer: a thin snake covered 736 world units per
+// second, which at the old 1.16 zoom was 854 screen pixels -- a screen width
+// every 2.2s -- and its full-lock turn circle was 178 units wide. At 0.70
+// cruise is 515 units/s, and boost (x1.92) lands at 989, roughly the speed the
+// game used to cruise at: sprinting now buys back the old pace instead of
+// being the only speed that reads as fast.
+//
+// Everything that has to move with it moves with it, so this is one lever and
+// not a retune:
+//   - SPANGDV is the speed at which angular rate saturates. Every snake exceeds
+//     it at base speed, which is what makes turnRate identical boosted or not --
+//     the property the boost feel and all of the bot planning geometry rest on.
+//     Left at 4.8 while speeds dropped, a thin snake would fall under the knee,
+//     turn rate would scale down with speed, and the turn radius would not
+//     tighten at all.
+//   - MAMU is angular, in radians per tick, and is deliberately NOT scaled.
+//     Speed falling against a fixed turn rate is exactly what tightens the turn
+//     circle (turn radius = speed / turnRate) by the same 0.70.
+//   - BOOST_MASS_PER_SEC scales too, so the mass burned per unit of distance
+//     closed is unchanged and the sprint stays worth the same as it was.
+export const SPEED_SCALE = 0.70;
+
+export const NSP1 = 5.39 * SPEED_SCALE; // [slither] base node speed
+export const NSP2 = 0.4 * SPEED_SCALE; // [slither] node speed per unit thickness
+export const NSP_FLAT = 0.1 * SPEED_SCALE; // [slither] fsp = ssp + 0.1
+export const SPANGDV = 4.8 * SPEED_SCALE; // [slither] speed at which angular rate saturates
+export const MAMU = 0.033; // [slither] base angular speed, rad / 8ms -- unscaled
 export const BOOST_MUL = 1.92; // observed ~2x sprint
 export const MAX_SC = 6; // [slither] thickness cap
 
@@ -43,7 +69,11 @@ export const PART_EXP = 0.60;
 
 // ---------------------------------------------------------------- boost
 export const BOOST_MIN_MASS = 22; // can't sprint below this
-export const BOOST_MASS_PER_SEC = 9.5; // wiki says 15/s in score units
+// Wiki says 15/s in score units; 9.5 is the retuned figure, scaled with
+// SPEED_SCALE so a sprint costs the same mass per unit of ground covered as it
+// did at full speed. Unscaled, slowing the arena would have made boosting 1.4x
+// more expensive per length closed and quietly killed it as a chase tool.
+export const BOOST_MASS_PER_SEC = 9.5 * SPEED_SCALE;
 export const BOOST_ORB_MASS = 1.6; // shed mass per trail pellet
 
 // ---------------------------------------------------------------- food
@@ -76,8 +106,21 @@ export const NAME_POOL = [
 // ---------------------------------------------------------------- camera
 // pixels-per-world-unit falls off as the snake fattens, so you see more arena
 // the bigger you get.
-export const ZOOM_BASE = 1.16;
-export const ZOOM_FALLOFF = 0.30;
+//
+// The baseline was 1.16, which framed a new snake tightly enough that the first
+// thing you learned about a neighbour was that you had already hit it. 0.86
+// shows 1.35x more field in each axis (1.8x the area) from the first second.
+//
+// The falloff came down from 0.30 with it, so the change is spent on the small
+// end where the player is actually blind rather than on the wide end that was
+// already wide. MAX_PARTS caps sc at 4.37, not MAX_SC, so the zoom in play runs
+// 0.86 -> 0.494 (it was 1.16 -> 0.577): a new snake gains 1.35x of field, a
+// capped one 1.17x, and growth still widens the view by 1.74x. Holding the old
+// 0.30 falloff on the new baseline would have taken a capped snake to 0.428,
+// where a thin bot is 12px thick -- visible, but past the point where the extra
+// field buys anything, since what you need to read at that size is other snakes.
+export const ZOOM_BASE = 0.86;
+export const ZOOM_FALLOFF = 0.22;
 export function zoomForSc(sc) {
   return ZOOM_BASE / (1 + ZOOM_FALLOFF * (sc - 1));
 }

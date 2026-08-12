@@ -73,16 +73,18 @@ function resolveMerge(game, group, anchor, combo) {
   // --- place the produced objects
   const made = [];
   const slots = [];
-  const first = board.fits({ w: nd.size[0], h: nd.size[1], cells: () => [] }, ax, ay)
-    ? [ax, ay] : board.findFree(ax, ay, nd.size[0], nd.size[1], 6, false);
+  // The produced object may live on either layer (a merged dragon lands on the
+  // dragon layer), so every free-cell search below is told what it is placing.
+  const first = board.fits({ d: nd, w: nd.size[0], h: nd.size[1], cells: () => [] }, ax, ay)
+    ? [ax, ay] : board.findFree(ax, ay, nd.size[0], nd.size[1], 6, false, nd);
   if (first) slots.push(first);
   while (slots.length < produced) {
-    const s = board.findFree(centre[0] - 0.5, centre[1] - 0.5, nd.size[0], nd.size[1], 7, false);
+    const s = board.findFree(centre[0] - 0.5, centre[1] - 0.5, nd.size[0], nd.size[1], 7, false, nd);
     if (!s) break;
     // reserve by placing a stub later; use a temp marker to avoid duplicates
     if (slots.some(([sx, sy]) => sx === s[0] && sy === s[1])) {
       // nudge outward
-      const s2 = board.findFree(centre[0] + 1.5, centre[1] + 1.5, nd.size[0], nd.size[1], 8, false);
+      const s2 = board.findFree(centre[0] + 1.5, centre[1] + 1.5, nd.size[0], nd.size[1], 8, false, nd);
       if (!s2 || slots.some(([sx, sy]) => sx === s2[0] && sy === s2[1])) break;
       slots.push(s2);
     } else slots.push(s);
@@ -97,11 +99,18 @@ function resolveMerge(game, group, anchor, combo) {
   }
   // if slot-reservation produced fewer than expected, top up around the anchor
   while (made.length < produced) {
-    const s = board.findFree(ax, ay, nd.size[0], nd.size[1], 9, false);
+    const s = board.findFree(ax, ay, nd.size[0], nd.size[1], 9, false, nd);
     if (!s) break;
     made.push(board.spawn(nd.key, s[0], s[1]));
   }
-  for (const m of made) { m.pop = 1; m.born = board.time; }
+  for (const m of made) {
+    m.pop = 1;
+    m.born = board.time;
+    // A merged dragon is a live dragon immediately, exactly like an ejected one.
+    // dragons.sync() would also catch it on the next tick, but the chain-reaction
+    // check below runs THIS call, so it must already be whole.
+    if (m.d.dragon && !m.dragon) game.dragons.attach(m);
+  }
 
   // --- the ejected spare ---------------------------------------------------
   // A merge only ever spends 5 inputs per two outputs (or 3 for an odd one);
@@ -109,7 +118,7 @@ function resolveMerge(game, group, anchor, combo) {
   // wiki's table calls it "Ejected X"; a 4-merge is its clearest case.
   const ejected = [];
   for (let k = 0; k < mergeSpare(n); k++) {
-    const s = board.findFree(ax, ay, d.size[0], d.size[1], 7, false);
+    const s = board.findFree(ax, ay, d.size[0], d.size[1], 7, false, d);
     if (!s) break;
     const back = board.spawn(anchor.key, s[0], s[1]);
     back.pop = 1;
@@ -123,7 +132,9 @@ function resolveMerge(game, group, anchor, combo) {
   // --- by-products ---------------------------------------------------------
   const byproducts = [];
   const emit = (key, x, y) => {
-    const s = board.findFree(x, y, 1, 1, 5, false);
+    const ed = def(key);
+    if (!ed) return;
+    const s = board.findFree(x, y, ed.size[0], ed.size[1], 5, false, ed);
     if (!s) return;
     const o = board.spawn(key, s[0], s[1]);
     o.pop = 1;
@@ -214,9 +225,15 @@ export function previewGroup(board, obj, x, y) {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (!dx && !dy) continue;
-          const o = board.at(cx + dx, cy + dy);
-          if (!o || seen.has(o) || o.key !== obj.key) continue;
-          seen.add(o); stack.push(o); out.push(o);
+          // Both layers, exactly as board.neighbours() does. at() returns the
+          // dragon standing on a cell in preference to the item under it, so
+          // scanning at() alone made the preview undercount a group whenever a
+          // dragon happened to stand on one of its members -- the highlight
+          // then disagreed with the merge board.group() would actually perform.
+          for (const o of [board.atItem(cx + dx, cy + dy), board.atDragon(cx + dx, cy + dy)]) {
+            if (!o || seen.has(o) || o.key !== obj.key) continue;
+            seen.add(o); stack.push(o); out.push(o);
+          }
         }
       }
     }

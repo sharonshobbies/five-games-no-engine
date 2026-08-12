@@ -27,9 +27,11 @@ export class Hud {
       racePlace: $('racePlace'), raceGap: $('raceGap'),
       endRaceBox: $('endRaceBox'), rowIsl: $('rowIsl'),
       nightWrap: $('nightWrap'),
+      muteBtn: $('muteBtn'),
       loading: $('loading'),
     };
     this.onMode = null;
+    this.onMute = null;
     this.mode = 'day';
     const pills = [[this.el.pillDay, 'day'], [this.el.pillNight, 'night'], [this.el.pillRace, 'race']];
     const pick = (mode) => (ev) => {
@@ -44,6 +46,26 @@ export class Hud {
       el.addEventListener('mousedown', pick(mode));
       el.addEventListener('touchstart', pick(mode), { passive: false });
     }
+
+    // Music mute. stopPropagation matters: the dive input is a window-level listener, so
+    // without it every press of this button would also launch the bird.
+    const toggleMute = (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      if (this.onMute) this.onMute();
+    };
+    if (this.el.muteBtn) {
+      this.el.muteBtn.addEventListener('mousedown', toggleMute);
+      this.el.muteBtn.addEventListener('touchstart', toggleMute, { passive: false });
+      this.el.muteBtn.addEventListener('keydown', (ev) => {
+        if (ev.code === 'Enter' || ev.code === 'Space') toggleMute(ev);
+      });
+    }
+
+    /** Reflect the persisted preference on the button. */
+    this.setMuted = (m) => {
+      if (this.el.muteBtn) this.el.muteBtn.classList.toggle('off', !!m);
+    };
 
     // The race ribbon's markers, built once: three rivals then the player.
     this.raceDots = [];

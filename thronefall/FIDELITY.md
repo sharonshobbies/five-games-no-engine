@@ -138,6 +138,43 @@ published numbers at all** — only descriptions of what they do.
 | Diegetic build prompt at the plot | PARTIAL | The plot highlights and Space opens it, but the cost prompt appears in a panel rather than floating over the plot. |
 | Colourblind settings / customisable enemy colour | MISSING | |
 
+## Sound and music
+
+Nothing about the original's audio is published in a form this could be measured against. There is
+no soundtrack release, no composer credit on the Steam page or in the wiki, and no track list, so
+**every note here is invented** — this section documents decisions, not citations. What is sourced is
+only the shape of the game the music has to serve: an untimed day phase, a night the player starts
+deliberately, and a boss on the final night.
+
+| Feature | State | Note |
+| --- | --- | --- |
+| All audio synthesised, no asset files | DONE | Effects in `audio.js`, the score in `music.js`. Nothing is downloaded or embedded. |
+| Distinct music for the realm map, the day and the night | DONE | Seven scenes: `realm`, `day`, `nightfall`, `night`, `boss`, `victory`, `defeat`. |
+| A marked day→night transition | DONE | A two-bar cut, not a crossfade: war drums, a bell tolling the night, and a descending bass tetrachord D–C–B♭–A. A drum pickup runs up to the bar line so the cut lands on a downbeat. |
+| Night music responds to how the night is going | DONE | Three pattern tiers plus a continuous gain scale, driven by enemies on the field, how much of the wave is left, and how close the keep is to falling. |
+| Boss nights sound different from normal nights | DONE | Phrygian instead of Aeolian, a choir, war drums on every beat, 108 bpm against the night's 96. |
+| Victory and defeat stings | DONE | Two bars each, then each hands back to the realm theme on its own. |
+| Timing immune to frame rate | DONE | Lookahead scheduling on the `AudioContext` clock, 0.35 s ahead. No `setTimeout` anywhere in the score, and a stall guard re-bases the clock instead of firing a backlog. |
+| Music mute, persisted, separate from effects | DONE | `Music: on/off` on the title screen and in the pause menu, stored as `musicOn` in the save. |
+| Starts on first input | DONE | Any keydown or pointerdown resumes the context, as browser autoplay policy requires. |
+| Progress is audible across a level | DONE | The nightfall bell's root rises one scale degree per night and stacks a fifth and an octave, so night 7 opens higher than night 1. |
+| Positional audio / per-unit sound | MISSING | Effects are non-positional one-shots, rate-gated per kind. |
+| Music that reacts to the specific enemy mix | MISSING | Intensity is a scalar. A night of siege rams sounds like a night of peasants at the same pressure. |
+| A volume slider rather than an on/off toggle | MISSING | Both audio toggles are binary. |
+| Ambient world sound (wind, water, crowd) | MISSING | There is no ambience bed; the score and the effects are the whole mix. |
+
+Two things about the arrangement are deliberate choices a listener might otherwise read as
+limitations. The whole score sits on **one root, D**, and changes mode rather than key — Aeolian for
+the realm and the night, Dorian for the day, Phrygian for the boss and the defeat, Mixolydian for the
+victory — so every transition is consonant with the one before it and the drama comes from mode,
+tempo and instrumentation. And `realm` carries **no percussion at all**, because the menu is the one
+place in the game where nothing is counting down.
+
+The score is verified by `tests/music-structure.mjs` (scene tables, pattern lengths, degrees inside
+their mode, tier escalation) and `tests/music-live.mjs` (a real browser: notes scheduled per scene,
+transitions firing on phase change, step spacing exact across bar lines, tempo changes and scene
+changes, and the mute toggle). Neither test can judge whether any of it sounds good.
+
 ## Not attempted
 
 Multiplayer, cloud saves, Steam integration, the quest system, the Temple and Summoning Circle,
@@ -150,6 +187,10 @@ system, multi-night research, the enemy targeting rules, the king-as-a-unit comb
 commanding, target lock, the perk/mutator loadout, the score formula and the Eternal Trials draft
 are all here and behave like the original. All ten maps exist, all nine weapons, and twenty-one
 enemy types with five bosses.
+
+The soundtrack is seven scenes of code-generated music — melody, harmony, bass and percussion on a
+lookahead sequencer, with the night's arrangement tracking how the night is going. None of it is
+measured against the original, because nothing about the original's audio is published.
 
 What is thinnest, and why. The Temple and Summoning Circle are absent because nothing published
 describes them beyond two bug reports and one forum claim. Three weapons have the right behaviour

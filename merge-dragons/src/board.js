@@ -110,8 +110,36 @@ export class Board {
   place(obj, x, y) {
     const layer = this.layerOf(obj);
     obj.x = x; obj.y = y;
+    // Safety net. Writing over a cell another object still holds erases that
+    // object from the grid: it stays in objs, alive and drawn, but neighbours()
+    // and group() stop seeing it, which silently caps merge groups below 3.
+    // Callers are supposed to land on a free cell (findFree with the right
+    // layer, or canDrop); if one slips through, relocate the displaced object
+    // instead of losing it, and count it so tests can assert this never fires.
+    const displaced = new Set();
+    for (const [cx, cy] of obj.cells()) {
+      if (!this.inside(cx, cy)) continue;
+      const cur = layer[this.idx(cx, cy)];
+      if (cur && cur !== obj) displaced.add(cur);
+    }
     for (const [cx, cy] of obj.cells()) if (this.inside(cx, cy)) layer[this.idx(cx, cy)] = obj;
     if (!this.objs.includes(obj)) this.objs.push(obj);
+    for (const other of displaced) {
+      this.displacedCount = (this.displacedCount || 0) + 1;
+      // its old cells may be partly overwritten; clear whatever it still owns
+      for (const [cx, cy] of other.cells()) {
+        if (this.inside(cx, cy) && layer[this.idx(cx, cy)] === other) layer[this.idx(cx, cy)] = null;
+      }
+      const spot = this.findFree(other.x, other.y, other.w, other.h, 8, false, other);
+      if (spot) {
+        other.x = spot[0]; other.y = spot[1];
+        for (const [cx, cy] of other.cells()) if (this.inside(cx, cy)) layer[this.idx(cx, cy)] = other;
+      } else {
+        // nowhere to go: drop it rather than leave a grid-invisible ghost
+        const i = this.objs.indexOf(other);
+        if (i >= 0) this.objs.splice(i, 1);
+      }
+    }
     return obj;
   }
   unplace(obj) {
@@ -134,15 +162,36 @@ export class Board {
     return o;
   }
 
+  // Which occupancy layer decides "is this cell taken" for a newcomer. The two
+  // layers overlap by design (dragons walk over objects), so the answer depends
+  // on which layer the newcomer will live on -- not on what is visible there.
+  // Accepts an Obj, a def, or a key; null/undefined means an ordinary item.
+  layerFor(what) {
+    if (!what) return this.grid;
+    const d = typeof what === 'string' ? def(what) : (what.d || what);
+    return d && d.dragon ? this.dgrid : this.grid;
+  }
+
   // Nearest free cell to (x,y) that an object of size w*h can occupy on live land.
-  findFree(x, y, w = 1, h = 1, maxR = 9, requireLive = true) {
+  //
+  // `forWhat` is the thing about to stand there (Obj, def or key). Omitting it
+  // means "an ordinary item", which is the historical behaviour: an item only
+  // cares about the item layer, since a dragon may legitimately stand over it.
+  //
+  // Passing it matters whenever the newcomer is a DRAGON. place() overwrites
+  // whatever entry it finds in its own layer, so a dragon sent to a cell another
+  // dragon already holds erases that dragon from the grid. The erased dragon
+  // stays in objs -- alive, drawn, still attached -- but neighbours() and
+  // group() can no longer see it, so a merge group silently caps below 3 and the
+  // dragon chain dead-ends after its first merge.
+  findFree(x, y, w = 1, h = 1, maxR = 9, requireLive = true, forWhat = null) {
+    const layer = this.layerFor(forWhat);
     const tryCell = (cx, cy) => {
       if (cx < 0 || cy < 0 || cx + w > this.cols || cy + h > this.rows) return false;
       for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
         if (!this.isPlayable(cx + i, cy + j)) return false;
         if (requireLive && !this.isLive(cx + i, cy + j)) return false;
-        // items only care about the item layer -- a dragon may be standing here
-        if (this.grid[this.idx(cx + i, cy + j)]) return false;
+        if (layer[this.idx(cx + i, cy + j)]) return false;
       }
       return true;
     };

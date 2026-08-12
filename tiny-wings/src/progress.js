@@ -14,7 +14,9 @@ export const MISSIONS = [
   { id: 'd2500', text: 'Fly 2500 m in one trip', test: (r) => r.distance >= 2500 },
 ];
 
-const DEFAULT = { bestDist: 0, bestScore: 0, nest: 1, done: [], plays: 0 };
+// `musicMuted` is a preference rather than progress, but it rides the same record so
+// there is one thing to read at boot and one thing to write.
+const DEFAULT = { bestDist: 0, bestScore: 0, nest: 1, done: [], plays: 0, musicMuted: false };
 
 export class Progress {
   constructor() {

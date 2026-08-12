@@ -240,6 +240,66 @@ All 836 sprites render through `atlas.html` with zero painter errors: 35 painter
 existing ones rewritten, taking the total to 81. `node tests/atlas-crop.mjs <chain>` renders one
 chain at four times the size for auditing.
 
+## Merge depth: the dragon-layer bug, and what is reachable now
+
+A player reported that merging three tier-1 objects worked but merging three of the resulting tier-2
+objects did nothing, and read it as the chains stopping at two levels. The chain data was never the
+problem: all 104 chains and 836 items were already complete, and the shallowest chains in play are
+complete too — the wiki's Gaia Statues table has exactly 4 tiers and Dragon Stars exactly 2, which is
+what the registry already carried. Nothing was extended.
+
+**What was broken.** The board keeps two occupancy layers, because dragons walk over objects: items in
+`grid`, dragons in `dgrid`. `Board.findFree` consulted only `grid`. That is right for an item — an
+item may be placed under a standing dragon — but wrong for a dragon: every cell a dragon occupied
+looked free, so `findFree` handed a dragon a cell another dragon already held, and `place()` wrote
+over the `dgrid` entry. The overwritten dragon stayed in `objs`, alive, drawn and still attached, but
+`neighbours()` and `group()` read the grid and could no longer see it. A group of three therefore
+counted two, `tryMerge` bailed at `group.length < 3`, and nothing happened. Both halves of the drag
+went through that call: `drop()` used it to stand the dragged dragon beside its target, and
+`resolveMerge` used it to place merge outputs. The eggs a level seeds are ordinary items, so the first
+merge (3 eggs → Whelp) worked; the next one, the first dragon-on-dragon merge, could not.
+
+**The fix.** `findFree` now takes the thing being placed and picks the layer from it
+(`Board.layerFor`); the item default is unchanged, so no item behaviour moved. Every call site that
+can place a dragon passes it — the drag-drop landing cell, merge outputs, the ejected spare, merge
+by-products, breeding, jar contents, shop, carried items and camp seeding. Two follow-ons: `place()`
+now relocates a displaced object and counts the event instead of orphaning it silently, so a future
+call site that forgets cannot reintroduce the class of bug unseen; and merged dragons are attached in
+`resolveMerge` rather than waiting for the next `dragons.sync()`, because the chain-reaction check
+runs inside the same call. `previewGroup` was also brought in line with `group()`: it scanned only the
+top layer via `at()`, so the drag highlight undercounted a group whenever a dragon stood on one of its
+members.
+
+**Depth reachable in play, per chain family the starting levels seed.** Walked tier 1 to top through
+the real drag path (`game.drop`, the function `input.js` calls on pointerup), once from freshly placed
+objects and once from merge outputs only:
+
+| Chain family | Top tier | Merge rungs |
+| --- | --- | --- |
+| Life Flowers | 18 — Life Tree of Cosmic Dreams | 18 |
+| Fruit Trees | 12 | 12 |
+| Living Stones | 10 | 10 |
+| Grass | 9 | 9 |
+| Life Orbs | 9 | 9 |
+| Stone Bricks | 8 | 8 |
+| Magic Currency | 8 | 8 |
+| Graves | 7 | 7 |
+| Dragon Homes | 7 | 7 |
+| Treasure Chests | 6 | 6 |
+| Gaia Statues | 3 — Heavenly Gaia Statue | 3 |
+| Grass / Rock / Toadstool Dragons | 11 | 9, in two runs of 4 and 5 |
+
+Dragon chains split around the tier-2 nest at index 6: a nest is tap-to-hatch and does not merge, so
+the ladder is Egg → Whelp → Kid → Dragon → Noble Dragon → *Nest of Sunset Dragon Eggs*, then hatch,
+then Sunset Egg → Whelp → Kid → Dragon → Royal Sunset Dragon. Both runs merge end to end.
+
+Guarded by `tests/tier-ladder.mjs`, which asserts every rung in both directions plus the player's
+literal sequence driven with real mouse events. Against the pre-fix code it reports 6 failing
+produced-output rungs (Grass, Rock and Toadstool Dragons, each at tiers 2→3 and 8→9), a failing
+real-mouse dragon merge, and 6 overwritten placements. The freshly-placed direction passes 124/124
+even then, which is why the committed suite missed this: `tests/merge5.mjs` proves the yield table
+thoroughly but only ever merges `stone:0`, one tier of one item chain.
+
 ## Known weak points
 
 1. **104 of ~601 chains.** The long tail is event and season content, and it is the bulk of the
@@ -258,11 +318,15 @@ chain at four times the size for auditing.
 
 ## What was verified, and how
 
-Seven scripts under `tests/`, all green, plus the shared harness (`verify-game.mjs`: 0 page errors,
+Ten scripts under `tests/`, all green, plus the shared harness (`verify-game.mjs`: 0 page errors,
 0 console errors, PASS):
 
 - `tests/merge5.mjs` — the Merging Table through the real drag-and-drop path, both halves. 3→1+0,
   4→1+**1 ejected**, 5→2+0, 6→2+0, 7→2+**1**, 8→3+0, 10→4+0, 12→4+**1**. All PASS.
+- `tests/tier-ladder.mjs` — the full merge ladder of every chain the starting levels seed, walked
+  through the real drop path in both directions: 124/124 rungs from freshly placed objects and
+  107/107 from merge outputs only, plus 3 Whelps dragged together into a Dragon Kid with real mouse
+  events, and 0 overwritten placements. Fails 6 rungs against the pre-fix code.
 - `tests/audit.mjs` — 169 item keys referenced by levels, merges and dragon code all resolve;
   0 registry cross-reference problems; 0 duplicate item names; the yield table matches all 11
   published X→Y pairs.

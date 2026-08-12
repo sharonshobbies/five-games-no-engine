@@ -26,7 +26,7 @@
 // only 0.56s ahead in a straight line -- and reaction is throttled to a few times
 // a second, so they can be baited.
 
-import { ARENA_R, BOOST_MIN_MASS, TICKS_PER_SEC } from './config.js';
+import { ARENA_R, BOOST_MIN_MASS, TICKS_PER_SEC, SPEED_SCALE } from './config.js';
 import { TAU, angleDelta, clamp, pick, randRange, turnToward } from './math.js';
 
 export const PERSONALITIES = ['grazer', 'grazer', 'scrapper', 'scrapper', 'assassin', 'coiler'];
@@ -36,6 +36,15 @@ const THREAT_R2 = 1100 * 1100;
 // Probe geometry, as multiples of the bot's own turn radius and body radius.
 const PROBE_TR = 1.75;
 const PROBE_R = 2.0;
+// The clamp on the result is in world units, so it carries SPEED_SCALE: the
+// probe length is what every safety fraction below (the 0.62/0.7/0.93 boost
+// gates, clear/probeLen, dangerRoom) is measured against, and it is only
+// meaningful as a proportion of the turn circle it was tuned against. Left at
+// the unscaled 320 the floor would have started binding for thin snakes, whose
+// probe is now 221 units, and quietly loosened their danger cliff from 0.92 of
+// the probe to 0.64.
+const PROBE_MIN = 320 * SPEED_SCALE;
+const PROBE_MAX = 2600 * SPEED_SCALE;
 // Room a heading must leave before it counts as safe. What matters is the ratio
 // of this to the probe length, and it is a strong lever: widening the margin from
 // 0.9 turn radii to 1.4 took bot deaths from 2.61/sec to 2.00/sec with nothing
@@ -148,17 +157,20 @@ export function driveBot(s, world, dt) {
   // How far ahead a bot must look is set by its own turn radius, not by a
   // constant. Both speed and turn rate are per-tick, so speed/turnRate is the
   // circle a snake carves at full lock, in world units. For a thin snake that
-  // is ~166 units; for a fat one it is ~750, and for a fat one sprinting it is
-  // ~1440. A fixed 760-unit probe was therefore blind for exactly the snakes
+  // is ~116 units; for a fat one it is ~525, and for a fat one sprinting it is
+  // ~1010. A fixed 760-unit probe was therefore blind for exactly the snakes
   // that most needed the warning: they physically could not complete a 90 degree
-  // turn inside the distance they were checking.
+  // turn inside the distance they were checking. (These figures are the
+  // pre-SPEED_SCALE 166/750/1440 at the 0.70 the arena now runs at; every one of
+  // them is a distance, so they all moved by the same factor and none of the
+  // ratios this file is tuned on did.)
   const turnRadius = speed / turnRate;
   // Angular rate saturates at SPANGDV, which every snake exceeds at base speed,
   // so turnRate is identical boosted or not. The un-boosted turn radius is
   // therefore just baseSpeed/turnRate, and it is the right number for planning
   // geometry a boost must not invalidate.
   const trBase = s.baseSpeed / turnRate;
-  const probeLen = clamp(turnRadius * PROBE_TR + myR * PROBE_R, 320, 2600);
+  const probeLen = clamp(turnRadius * PROBE_TR + myR * PROBE_R, PROBE_MIN, PROBE_MAX);
   const dangerRoom = turnRadius * DANGER_TR + myR * DANGER_R;
 
   // ---------------------------------------------------------- pick a victim

@@ -187,6 +187,22 @@
   .pill:hover{ background:rgba(255,255,255,.24); }
   .pill.sel{ background:rgba(255,255,255,.92); color:#1d3557; box-shadow:0 3px 0 rgba(0,0,0,.18); }
 
+  /* music mute. Always reachable, on every screen, and deliberately quiet-looking so it
+     never competes with the score. The muted state is struck through rather than swapped
+     for a second glyph, so the control reads as one thing in both states. */
+  #muteBtn{ position:absolute; right:12px; bottom:12px; width:38px; height:38px;
+            display:flex; align-items:center; justify-content:center;
+            border-radius:999px; cursor:pointer; pointer-events:auto;
+            font-size:17px; line-height:1; user-select:none;
+            color:#fff; background:rgba(10,20,40,.30);
+            box-shadow:inset 0 0 0 2px rgba(255,255,255,.30);
+            transition:background .18s ease, opacity .18s ease; opacity:.82; }
+  #muteBtn:hover{ background:rgba(10,20,40,.46); opacity:1; }
+  #muteBtn.off{ opacity:.55; }
+  #muteBtn.off::after{ content:''; position:absolute; left:7px; right:7px; top:50%;
+                       height:2px; background:#fff; transform:rotate(-38deg);
+                       border-radius:2px; }
+
   /* narrow screens: shrink the HUD so three panels still fit a phone width */
   @media (max-width: 620px){
     .panel{ padding:6px 10px 7px; border-radius:13px; }
@@ -239,6 +255,9 @@
     <div id="pops"></div>
     <div id="banner"><div class="n" id="bnTop">ISLAND 1</div><div class="t" id="bnName">Meadow</div><div class="s" id="bnBonus"></div></div>
   </div>
+
+  <!-- music mute; lives outside the hud panel so it stays visible on every screen -->
+  <div id="muteBtn" title="Music on / off" aria-label="Music on / off" role="button" tabindex="0">&#9835;</div>
 
   <!-- TITLE -->
   <div class="screen on" id="scTitle">

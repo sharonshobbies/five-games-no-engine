@@ -22,6 +22,21 @@ export const SEA_LEVEL = 0;
 const SHORE_Y = -4;         // island surface height where it meets the sea
 const GAP_FLOOR = -28;      // deepest point of the bay between islands
 export const GAP = 115;     // width of open water between islands
+// Hill scale. Everything about a hill — wavelength, amplitude, island length, and the
+// coin/cloud layout that hangs off it — is multiplied by this, so the terrain stays
+// self-similar and only its SIZE changes.
+//
+// This exists because of a measured problem, not a taste call. A crest's launchable
+// region (where curvature is negative) is about a quarter wavelength wide, so at the old
+// wavelength a bird crossing it at 600 units/s had ~0.13 s in which releasing the button
+// would throw it into the air. Human reaction latency is 180–250 ms — wider than the
+// entire window — so a real player got hops of a tenth of a second and no altitude while
+// the frame-perfect probe bot flew 14 m arcs. Scaling the hills up widens that window
+// without changing whether a launch is possible at all: the launch test is
+// `v²·|κ| > g·cosθ + adhesion`, and under a length scale k the height of a hill grows as
+// k (so v² grows as k) while crest curvature falls as 1/k — the two cancel. What does
+// change is time: the window widens as √k, and the arc it produces is k times taller.
+const HILL_SCALE = 1.35;
 const RAMP_IN = 0.052;      // fraction of island length spent rising out of the sea
 const RAMP_OUT = 0.050;     // fraction spent sloping back down into the bay
 
@@ -43,10 +58,10 @@ export class Terrain {
       // ratio creeping up only slightly so slopes stay slideable rather than becoming
       // cliffs. Bigger hills mean more air and more speed, which is the real escalation.
       const t = Math.min(1, i / 9);
-      const wl = rngRange(rnd, 142, 162) + t * 68;
+      const wl = (rngRange(rnd, 142, 162) + t * 68) * HILL_SCALE;
       const amp = wl * (0.200 + t * 0.038) * rngRange(rnd, 0.94, 1.06);
       const base = 34 + t * 24;
-      const wantL = rngRange(rnd, 1750, 2150) + t * 950;
+      const wantL = (rngRange(rnd, 1750, 2150) + t * 950) * HILL_SCALE;
 
       const k1 = (Math.PI * 2) / wl;
       const p1 = rnd() * Math.PI * 2;
@@ -180,37 +195,40 @@ export class Terrain {
     const coins = [];
     const clouds = [];
 
+    // Every spacing and height below rides HILL_SCALE, so a crest arc still hugs its
+    // crest and a high arc still sits at the top of a launch rather than inside a hill.
+    const S = HILL_SCALE;
     let x = is.x0 + is.L * 0.11;
     while (x < is.x1 - is.L * 0.05) {
       if (rnd() < 0.60) {
         // arc hugging a crest
-        const cx = this.findCrest(x, 420);
+        const cx = this.findCrest(x, 560);
         const n = 3 + Math.floor(rnd() * 4);
-        const span = 15 + rnd() * 11;
+        const span = (15 + rnd() * 11) * S;
         for (let j = 0; j < n; j++) {
           const px = cx + (j - (n - 1) / 2) * span;
           const f = n > 1 ? j / (n - 1) : 0.5;
-          coins.push({ x: px, y: this.height(px) + 11 + Math.sin(f * Math.PI) * 9 });
+          coins.push({ x: px, y: this.height(px) + (11 + Math.sin(f * Math.PI) * 9) * S });
         }
       } else {
         // high arc rewarding a big launch
-        const cx = x + rnd() * 220;
+        const cx = x + rnd() * 220 * S;
         const n = 4 + Math.floor(rnd() * 5);
-        const span = 23 + rnd() * 14;
-        const top = this.height(cx) + 78 + rnd() * 95;
+        const span = (23 + rnd() * 14) * S;
+        const top = this.height(cx) + (78 + rnd() * 95) * S;
         for (let j = 0; j < n; j++) {
           const px = cx + (j - (n - 1) / 2) * span;
           const f = n > 1 ? j / (n - 1) : 0.5;
-          coins.push({ x: px, y: top + Math.sin(f * Math.PI) * 28 - 14 });
+          coins.push({ x: px, y: top + (Math.sin(f * Math.PI) * 28 - 14) * S });
         }
       }
-      x += 240 + rnd() * 300;
+      x += (240 + rnd() * 300) * S;
     }
 
-    let cx2 = is.x0 + 240 + rnd() * 420;
+    let cx2 = is.x0 + (240 + rnd() * 420) * S;
     while (cx2 < is.x1) {
-      clouds.push({ x: cx2, y: 122 + rnd() * 150, r: 15 + rnd() * 13, seed: rnd() * 1000 });
-      cx2 += 430 + rnd() * 540;
+      clouds.push({ x: cx2, y: (122 + rnd() * 150) * S, r: 15 + rnd() * 13, seed: rnd() * 1000 });
+      cx2 += (430 + rnd() * 540) * S;
     }
 
     is._features = { coins, clouds };

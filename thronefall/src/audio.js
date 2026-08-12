@@ -1,11 +1,12 @@
-// All sound is synthesised at runtime — a few oscillator/noise voices plus a
-// two-chord ambient bed that swaps between day and night.
+// All sound effects are synthesised at runtime from a few oscillator and noise
+// voices. This module owns the effects and the bus layout only; the score is a
+// sequencer of its own in music.js, which draws on musicBus and noiseBuf.
 export class Audio {
   constructor() {
     this.ctx = null;
     this.enabled = true;
     this.lastAt = new Map();
-    this.musicNodes = [];
+    this.musicLevel = 0.35;   // musicBus gain when the score is unmuted
   }
 
   ensure() {
@@ -21,7 +22,7 @@ export class Audio {
       this.sfxBus.gain.value = 0.85;
       this.sfxBus.connect(this.master);
       this.musicBus = this.ctx.createGain();
-      this.musicBus.gain.value = 0.35;
+      this.musicBus.gain.value = this.musicLevel;
       this.musicBus.connect(this.master);
       this.noiseBuf = this.makeNoise();
     } catch (e) { this.enabled = false; }
@@ -110,56 +111,5 @@ export class Audio {
       case 'click': this.tone(720, 0.04, 'square', 0.06); break;
       default: break;
     }
-  }
-
-  // --- ambient bed --------------------------------------------------------
-  music(mode) {
-    const ctx = this.ensure();
-    if (!ctx || !this.enabled) return;
-    this.stopMusic();
-    const chords = mode === 'night'
-      ? [[110, 130.81, 164.81], [98, 116.54, 146.83]]
-      : [[130.81, 164.81, 196], [146.83, 174.61, 220]];
-    const g = ctx.createGain();
-    g.gain.value = 0;
-    g.gain.linearRampToValueAtTime(mode === 'night' ? 0.16 : 0.12, ctx.currentTime + 2.5);
-    g.connect(this.musicBus);
-    this.musicGain = g;
-    const lfo = ctx.createOscillator();
-    const lg = ctx.createGain();
-    lfo.frequency.value = 0.05;
-    lg.gain.value = 0.35;
-    lfo.connect(lg);
-    lfo.start();
-    this.musicNodes.push(lfo);
-    chords.forEach((ch, ci) => {
-      ch.forEach((f, i) => {
-        const o = ctx.createOscillator();
-        o.type = mode === 'night' ? 'sawtooth' : 'triangle';
-        o.frequency.value = f * (ci === 0 ? 1 : 1.0);
-        const og = ctx.createGain();
-        og.gain.value = 0.2 / ch.length;
-        const filt = ctx.createBiquadFilter();
-        filt.type = 'lowpass';
-        filt.frequency.value = mode === 'night' ? 480 : 900;
-        lg.connect(og.gain);
-        o.connect(filt); filt.connect(og); og.connect(g);
-        o.detune.value = (i - 1) * 6 + ci * 4;
-        o.start();
-        this.musicNodes.push(o);
-      });
-    });
-  }
-
-  stopMusic() {
-    if (this.musicGain && this.ctx) {
-      try {
-        this.musicGain.gain.cancelScheduledValues(this.ctx.currentTime);
-        this.musicGain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.8);
-      } catch (e) { /* ignore */ }
-    }
-    const nodes = this.musicNodes;
-    this.musicNodes = [];
-    setTimeout(() => { for (const n of nodes) { try { n.stop(); } catch (e) { /* ignore */ } } }, 900);
   }
 }

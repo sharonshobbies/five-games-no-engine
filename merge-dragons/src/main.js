@@ -147,7 +147,7 @@ class Game {
 
   buy(e) {
     const d = def(e.key);
-    const spot = this.board.findFree(this.board.cols / 2, this.board.rows / 2, d.size[0], d.size[1], 12, true);
+    const spot = this.board.findFree(this.board.cols / 2, this.board.rows / 2, d.size[0], d.size[1], 12, true, d);
     if (!spot) { this.fx.banner('Need more space in camp!', 'info'); this.audio.deny(); return; }
     if (e.cur === 'bricks') this.save.bricks -= e.cost;
     else if (e.cur === 'gems') this.save.gems -= e.cost;
@@ -271,7 +271,7 @@ class Game {
         for (let i = 0; i < n; i++) {
           const spot = this.board.findFree(
             8 + Math.floor((rnd() - 0.5) * 6), 6 + Math.floor((rnd() - 0.5) * 6),
-            def(key).size[0], def(key).size[1], 8, true);
+            def(key).size[0], def(key).size[1], 8, true, def(key));
           if (spot) { const o = this.board.spawn(key, spot[0], spot[1]); o.pop = 0; o.born = -100; o.lastHarvest = -100; }
         }
       }
@@ -284,7 +284,7 @@ class Game {
       this.save.carried = [];
       for (const k of got) {
         if (!ITEMS[k]) continue;
-        const spot = this.board.findFree(9, 7, def(k).size[0], def(k).size[1], 10, true);
+        const spot = this.board.findFree(9, 7, def(k).size[0], def(k).size[1], 10, true, def(k));
         if (spot) { const o = this.board.spawn(k, spot[0], spot[1]); o.pop = 1; this.fx.spawnBurst(o); }
       }
       if (got.length) this.fx.banner(`${got.length} item${got.length > 1 ? 's' : ''} carried home`, 'info');
@@ -344,7 +344,7 @@ class Game {
       for (let i = 0; i < n; i++) {
         const spot = b.findFree(
           Math.floor(Math.random() * b.cols), Math.floor(Math.random() * b.rows),
-          d.size[0], d.size[1], 12, true);
+          d.size[0], d.size[1], 12, true, d);
         if (!spot) continue;
         const o = b.spawn(k, spot[0], spot[1]);
         o.born = -100; o.lastHarvest = -100; o.pop = 0;
@@ -617,8 +617,12 @@ class Game {
     // dropping onto an identical object => merge attempt from that cell
     if (target && target !== o && target.key === o.key && isMergeable(o.key)) {
       board.unplace(o);
-      // stand the dragged object on the nearest free cell around the target
-      const spot = board.findFree(gx, gy, o.w, o.h, 3, false) || origin;
+      // Stand the dragged object on the nearest free cell around the target --
+      // free on ITS OWN layer. Searched on the item layer, a dragged dragon is
+      // handed the target dragon's own cell, overwrites it, and the group falls
+      // back below 3: that is why every dragon chain used to dead-end at its
+      // first dragon-on-dragon merge.
+      const spot = board.findFree(gx, gy, o.w, o.h, 3, false, o) || origin;
       board.place(o, spot[0], spot[1]);
       const r = tryMerge(this, o);
       if (!r) { this.audio.drop(); }
@@ -860,7 +864,7 @@ class Game {
             return;
           }
           this.save.gems -= cost;
-          const spot = this.board.findFree(o.x, o.y, inside.size[0], inside.size[1], 6, true);
+          const spot = this.board.findFree(o.x, o.y, inside.size[0], inside.size[1], 6, true, inside);
           this.board.remove(o);
           if (spot) {
             const it = this.board.spawn(inside.key, spot[0], spot[1]);
@@ -909,7 +913,8 @@ class Game {
     const bid = (pool.length ? pool : DRAGON_CHAINS)[Math.floor(Math.random() * (pool.length || DRAGON_CHAINS.length))];
     const stageIdx = [1, 2, 3][Math.min(2, Math.max(0, (o.d.soul || 1) - 1))];
     const key = `${bid}:${stageIdx}`;
-    const spot = this.board.findFree(o.x, o.y, 1, 1, 6, true);
+    const kd = def(key);
+    const spot = this.board.findFree(o.x, o.y, kd.size[0], kd.size[1], 6, true, kd);
     if (!spot) { this.fx.floatText(o.cx, o.cy, 'Need more space!', '#ff9f9f'); return; }
     this.board.remove(o);
     const child = this.board.spawn(key, spot[0], spot[1]);
