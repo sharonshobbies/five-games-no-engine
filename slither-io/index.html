@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+<title>slither — a from-scratch remake</title>
+<style>
+  :root {
+    --ink: #e8f0ff;
+    --dim: #8ea3c8;
+    --panel: rgba(9, 13, 28, 0.62);
+    --stroke: rgba(96, 130, 200, 0.22);
+    --hot: #ff4858;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #05070f; color: var(--ink);
+    font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #gl { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+
+  /* pointer-events is inherited, so the whole HUD is click-through by default
+     and only the genuinely interactive subtrees opt back in. An earlier
+     `#ui > * { pointer-events: none }` rule out-specified `.overlay`
+     (id beats class) and made the Play button unclickable. */
+  #ui { position: fixed; inset: 0; pointer-events: none; }
+
+  /* ------------------------------------------------------ nickname labels */
+  #namelayer { position: absolute; inset: 0; overflow: hidden; }
+  .nametag {
+    position: absolute; left: 0; top: 0; white-space: nowrap;
+    font-weight: 700; letter-spacing: .02em;
+    text-shadow: 0 0 4px rgba(0,0,0,.95), 0 1px 3px rgba(0,0,0,.9);
+    will-change: transform;
+  }
+
+  /* ------------------------------------------------------ leaderboard */
+  #leaderboard {
+    position: absolute; top: 14px; right: 14px; width: 214px;
+    background: var(--panel); border: 1px solid var(--stroke); border-radius: 10px;
+    padding: 9px 11px 10px; backdrop-filter: blur(7px);
+  }
+  #leaderboard h2 {
+    margin: 0 0 6px; font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--dim); font-weight: 700; display: flex; justify-content: space-between;
+  }
+  #lb-title { color: rgba(142,163,200,.7); letter-spacing: .04em; text-transform: none; font-weight: 400; }
+  #lb-rows { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  #lb-rows li {
+    display: flex; align-items: center; gap: 6px; padding: 2px 0;
+    color: #cfdcf5; line-height: 1.35;
+  }
+  #lb-rows li.me { color: #fff; font-weight: 700; }
+  #lb-rows li.me .lb-rank { color: #ffd166; }
+  .lb-rank { width: 20px; text-align: right; color: var(--dim); font-size: 11px; flex: none; }
+  .lb-chip { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 6px currentColor; }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-score { font-variant-numeric: tabular-nums; color: #a9bfe6; font-size: 12px; }
+  #lb-rows li.me .lb-score { color: #fff; }
+
+  /* ------------------------------------------------------ stats + minimap */
+  #stats {
+    position: absolute; left: 14px; bottom: 14px;
+    background: var(--panel); border: 1px solid var(--stroke); border-radius: 10px;
+    padding: 8px 13px; backdrop-filter: blur(7px); min-width: 148px;
+    opacity: 0; transition: opacity .25s;
+  }
+  #ui.playing #stats { opacity: 1; }
+  #stats .row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; color: var(--dim); }
+  #stats .big { font-size: 27px; font-weight: 700; color: #fff; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  #stats .lab { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
+  #stats b { color: #dce7ff; font-variant-numeric: tabular-nums; }
+
+  #minimapWrap {
+    position: absolute; right: 14px; bottom: 14px; width: 168px; height: 168px;
+    background: var(--panel); border: 1px solid var(--stroke); border-radius: 50%;
+    backdrop-filter: blur(7px); padding: 4px;
+  }
+  #minimap { width: 100%; height: 100%; display: block; }
+
+  /* ------------------------------------------------------ kill feed + perf */
+  #killfeed {
+    position: absolute; left: 14px; top: 14px; width: 300px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .feed-line {
+    background: var(--panel); border: 1px solid var(--stroke);
+    border-left: 3px solid var(--hot);
+    border-radius: 5px; padding: 4px 9px; font-size: 12px; color: #cfdcf5;
+    backdrop-filter: blur(6px); transition: opacity .3s linear;
+  }
+  .feed-line b { color: #fff; }
+
+  #perf {
+    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+    font-size: 10.5px; color: rgba(142,163,200,.5); letter-spacing: .04em;
+    font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap;
+  }
+  #hint {
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+    font-size: 12px; color: rgba(180,200,235,.55); letter-spacing: .06em;
+    opacity: 0; transition: opacity .5s;
+  }
+  #ui.playing #hint { opacity: 1; animation: fadeHint 7s forwards; }
+  @keyframes fadeHint { 0%,55% { opacity: 1; } 100% { opacity: 0; } }
+
+  #mute {
+    position: absolute; right: 14px; top: 252px; pointer-events: auto;
+    background: var(--panel); border: 1px solid var(--stroke); color: var(--dim);
+    border-radius: 7px; padding: 4px 9px; font: inherit; font-size: 11px; cursor: pointer;
+    letter-spacing: .1em; text-transform: uppercase;
+  }
+  #mute.off { color: #6b7c9c; }
+  #mute:hover { color: #fff; }
+
+  /* ------------------------------------------------------ overlays */
+  .overlay {
+    position: absolute; inset: 0; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 45%, rgba(5,8,18,.30) 0%, rgba(4,6,14,.62) 58%, rgba(3,5,11,.80) 100%);
+    cursor: pointer;
+  }
+  .overlay.hidden { display: none; }
+  .card {
+    width: min(440px, 92vw); text-align: center; padding: 26px 28px 22px;
+    background: rgba(10, 14, 30, .82); border: 1px solid rgba(110,150,225,.22);
+    border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05);
+    backdrop-filter: blur(10px);
+  }
+  .logo {
+    font-size: 52px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 2px;
+    background: linear-gradient(92deg, #7dff3a, #3ae8ff 42%, #b06bff 74%, #ff4d6d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 22px rgba(90, 200, 255, .35));
+  }
+  .sub { margin: 0 0 18px; font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--dim); }
+  input#nick {
+    width: 100%; padding: 11px 14px; font: inherit; font-size: 16px; text-align: center;
+    color: #fff; background: rgba(255,255,255,.06);
+    border: 1px solid rgba(120,160,235,.28); border-radius: 9px; outline: none;
+  }
+  input#nick:focus { border-color: #3ae8ff; box-shadow: 0 0 0 3px rgba(58,232,255,.13); }
+  input#nick::placeholder { color: rgba(160,180,215,.45); }
+
+  #skins {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 13px 0 16px;
+  }
+  .swatch {
+    padding: 2px; background: rgba(255,255,255,.04); cursor: pointer;
+    border: 1px solid rgba(120,160,235,.16); border-radius: 7px; line-height: 0;
+  }
+  .swatch canvas { width: 100%; height: 26px; }
+  .swatch:hover { border-color: rgba(150,190,255,.45); }
+  .swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.22); background: rgba(255,255,255,.1); }
+
+  button.cta {
+    width: 100%; padding: 13px; font: inherit; font-size: 17px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; color: #04240b; cursor: pointer;
+    background: linear-gradient(180deg, #9dff5c, #55d61f); border: 0; border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(110, 230, 60, .3);
+  }
+  button.cta:hover { filter: brightness(1.08); }
+  button.cta:active { transform: translateY(1px); }
+  .keys { margin: 14px 0 0; font-size: 11.5px; color: var(--dim); line-height: 1.7; }
+  .keys kbd {
+    background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 4px; padding: 1px 6px; font-family: inherit; font-size: 11px; color: #dce7ff;
+  }
+  .bestline { margin: 10px 0 0; font-size: 12px; color: var(--dim); }
+  .bestline b { color: #ffd166; }
+
+  #death .logo { font-size: 40px; background: linear-gradient(92deg, #ff8a8a, #ff4858); -webkit-background-clip: text; background-clip: text; }
+  .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 16px 0 4px; }
+  .cell { background: rgba(255,255,255,.045); border: 1px solid rgba(120,160,235,.14); border-radius: 9px; padding: 9px 6px; }
+  .cell .v { font-size: 25px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .cell .k { font-size: 9.5px; letter-spacing: .17em; text-transform: uppercase; color: var(--dim); margin-top: 2px; }
+  #d-cause { margin: 12px 0 14px; font-size: 13px; color: #b6c6e4; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <div id="namelayer"></div>
+
+  <div id="killfeed"></div>
+
+  <div id="leaderboard">
+    <h2>Leaderboard <span id="lb-title"></span></h2>
+    <ol id="lb-rows"></ol>
+  </div>
+
+  <button id="mute" type="button">sound on</button>
+
+  <div id="stats">
+    <div class="lab">Length</div>
+    <div class="big" id="stat-length">0</div>
+    <div class="row"><span>Rank</span><b id="stat-rank">-</b></div>
+    <div class="row"><span>Kills</span><b id="stat-kills">0</b></div>
+  </div>
+
+  <div id="minimapWrap"><canvas id="minimap" width="320" height="320"></canvas></div>
+
+  <div id="hint">move the mouse to steer &nbsp;·&nbsp; hold click or space to boost</div>
+  <div id="perf"></div>
+
+  <!-- ------------------------------------------------------ title -->
+  <div class="overlay" id="title">
+    <div class="card">
+      <h1 class="logo">slither</h1>
+      <p class="sub">eat · grow · cut them off</p>
+      <input id="nick" maxlength="20" placeholder="nickname" autocomplete="off" spellcheck="false" />
+      <div id="skins"></div>
+      <button class="cta" id="play" type="button">Play</button>
+      <p class="keys">
+        <kbd>mouse</kbd> steer &nbsp;·&nbsp; <kbd>hold click</kbd> / <kbd>space</kbd> boost (costs length)<br />
+        your head into another snake kills you — your own body is safe
+      </p>
+      <p class="bestline">Best length <b id="t-best">0</b></p>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------ death -->
+  <div class="overlay hidden" id="death">
+    <div class="card">
+      <h1 class="logo">you died</h1>
+      <p id="d-cause">You crashed.</p>
+      <div class="grid4">
+        <div class="cell"><div class="v" id="d-length">0</div><div class="k">Length</div></div>
+        <div class="cell"><div class="v" id="d-rank">-</div><div class="k">Rank</div></div>
+        <div class="cell"><div class="v" id="d-kills">0</div><div class="k">Kills</div></div>
+        <div class="cell"><div class="v" id="d-best">0</div><div class="k">Best</div></div>
+      </div>
+      <button class="cta" id="again" type="button">Play again</button>
+      <p class="keys">click anywhere or press <kbd>space</kbd></p>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

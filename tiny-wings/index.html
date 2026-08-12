@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Tiny Wings</title>
+<style>
+  :root{
+    --ink:#2b3a55;
+    --font: "Avenir Next Rounded", "SF Pro Rounded", ui-rounded, "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#0b1020; }
+  body{ font-family:var(--font); font-weight:800; color:#fff; user-select:none; touch-action:none; cursor:pointer; }
+  #glcanvas{ position:fixed; inset:0; width:100%; height:100%; display:block; }
+
+  #ui{ position:fixed; inset:0; pointer-events:none; overflow:hidden; }
+
+  /* ---------- in-game HUD ---------- */
+  .hud{ position:absolute; inset:0; opacity:0; transition:opacity .35s ease; }
+  .hud.on{ opacity:1; }
+
+  .panel{
+    position:absolute; padding:8px 14px 9px; border-radius:16px;
+    background:rgba(18,32,58,.26);
+    box-shadow:0 2px 6px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.30);
+    backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+    text-shadow:0 2px 3px rgba(0,0,0,.28);
+    line-height:1;
+  }
+  .lbl{ font-size:11px; letter-spacing:.16em; opacity:.85; text-transform:uppercase; }
+  .val{ font-size:26px; letter-spacing:.01em; }
+  .val small{ font-size:14px; opacity:.85; }
+
+  #pDist{ left:14px; top:12px; min-width:132px; }
+  #pScore{ right:14px; top:12px; text-align:right; min-width:132px; }
+  #pIsland{ left:50%; top:12px; transform:translateX(-50%); text-align:center; }
+  #pIsland .val{ font-size:19px; }
+
+  /* speed + fever meter */
+  #meterWrap{ position:absolute; left:14px; top:74px; width:170px; }
+  #meterBg{
+    height:13px; border-radius:9px; background:rgba(0,0,0,.18);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.25); overflow:hidden;
+  }
+  #meterFill{ height:100%; width:0%; border-radius:9px;
+    background:linear-gradient(90deg,#ffe082,#ffb74d 55%,#ff7043);
+    transition:width .08s linear; box-shadow:0 0 10px rgba(255,170,60,.65); }
+  #chain{ display:flex; gap:7px; margin-top:8px; align-items:center; }
+  .dot{ width:11px; height:11px; border-radius:50%; background:rgba(255,255,255,.28);
+        box-shadow:inset 0 1px 2px rgba(0,0,0,.25); transition:all .18s ease; }
+  .dot.lit{ background:#ffd54f; box-shadow:0 0 10px #ffca28, 0 0 22px rgba(255,200,60,.6); transform:scale(1.22); }
+  #feverTag{ font-size:12px; letter-spacing:.22em; margin-left:6px; opacity:0;
+             color:#fff3b0; text-shadow:0 0 10px #ffab00,0 2px 3px rgba(0,0,0,.4); transition:opacity .2s; }
+  #feverTag.on{ opacity:1; animation:pulse .55s ease-in-out infinite alternate; }
+  @keyframes pulse{ from{ transform:scale(1);} to{ transform:scale(1.13);} }
+
+  /* night warning bar */
+  #nightWrap{ position:absolute; right:14px; top:74px; width:170px; text-align:right; }
+  #nightBg{ height:13px; border-radius:9px; background:rgba(0,0,0,.18); overflow:hidden;
+            box-shadow:inset 0 1px 2px rgba(0,0,0,.25); }
+  #nightFill{ height:100%; width:0%; margin-left:auto; border-radius:9px;
+              background:linear-gradient(90deg,#5c6bc0,#283593 60%,#12143a);
+              transition:width .12s linear; }
+  #nightLbl{ font-size:11px; letter-spacing:.16em; opacity:.85; margin-top:6px; text-transform:uppercase;
+             text-shadow:0 2px 3px rgba(0,0,0,.3); }
+
+  /* race ribbon: where the four birds are along the course */
+  #raceWrap{ position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+             width:min(420px,74vw); display:none; text-align:center; }
+  #raceWrap.on{ display:block; }
+  #raceTrack{ position:relative; height:16px; border-radius:9px;
+              background:rgba(12,24,48,.30);
+              box-shadow:inset 0 1px 3px rgba(0,0,0,.30), inset 0 -1px 0 rgba(255,255,255,.15);
+              backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); }
+  /* the chequered finish cap at the right-hand end */
+  #raceTrack::after{ content:""; position:absolute; right:0; top:0; width:12px; height:100%;
+                     border-radius:0 9px 9px 0; opacity:.9;
+                     background:
+                       linear-gradient(45deg,#fff 25%,transparent 25%,transparent 75%,#fff 75%) 0 0/6px 6px,
+                       linear-gradient(45deg,#fff 25%,#223 25%,#223 75%,#fff 75%) 3px 3px/6px 6px; }
+  .rdot{ position:absolute; top:50%; width:15px; height:15px; margin:-7.5px 0 0 -7.5px; border-radius:50%;
+         box-shadow:0 1px 3px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.5);
+         transition:left .1s linear; }
+  .rdot.me{ width:19px; height:19px; margin:-9.5px 0 0 -9.5px; background:#fff;
+            box-shadow:0 0 0 3px rgba(30,60,110,.55), 0 2px 5px rgba(0,0,0,.4); z-index:2; }
+  #raceLine{ margin-top:9px; font-size:13px; letter-spacing:.16em; text-transform:uppercase;
+             text-shadow:0 2px 3px rgba(0,0,0,.35); }
+  #raceLine b{ font-size:17px; color:#ffe082; letter-spacing:.06em; }
+
+  /* race results table on the summary card */
+  #endRaceBox{ display:none; margin:8px 0 12px; }
+  #endRaceBox.on{ display:block; }
+  .rrow{ display:flex; align-items:center; gap:10px; font-size:16px; padding:6px 6px;
+         border-bottom:1px dashed rgba(255,255,255,.16); }
+  .rrow:last-child{ border-bottom:none; }
+  .rrow .pl{ width:34px; text-align:right; opacity:.85; font-size:14px; }
+  .rrow .sw{ width:13px; height:13px; border-radius:50%; flex:0 0 13px;
+             box-shadow:inset 0 1px 0 rgba(255,255,255,.5); }
+  .rrow .nm{ flex:1; text-align:left; letter-spacing:.04em; }
+  .rrow .tm{ font-variant-numeric:tabular-nums; opacity:.9; font-size:15px; }
+  .rrow.you{ background:rgba(255,255,255,.13); border-radius:10px; }
+  .rrow.you .nm{ color:#ffe082; }
+
+  /* floating popups */
+  #pops{ position:absolute; inset:0; }
+  .pop{
+    position:absolute; left:50%; transform:translate(-50%,0);
+    font-size:30px; letter-spacing:.02em; white-space:nowrap;
+    text-shadow:0 3px 0 rgba(0,0,0,.18), 0 0 24px rgba(255,255,255,.35);
+    animation:popUp 1.25s cubic-bezier(.16,.8,.3,1) forwards;
+  }
+  .pop.small{ font-size:20px; }
+  .pop.big{ font-size:44px; }
+  @keyframes popUp{
+    0%{ opacity:0; transform:translate(-50%,18px) scale(.7); }
+    18%{ opacity:1; transform:translate(-50%,0) scale(1.1); }
+    32%{ transform:translate(-50%,-4px) scale(1); }
+    100%{ opacity:0; transform:translate(-50%,-70px) scale(1); }
+  }
+
+  /* island banner */
+  #banner{ position:absolute; left:50%; top:34%; transform:translate(-50%,-50%);
+           text-align:center; opacity:0; }
+  #banner.show{ animation:bannerIn 2.4s ease forwards; }
+  #banner .n{ font-size:15px; letter-spacing:.4em; opacity:.9; }
+  #banner .t{ font-size:44px; letter-spacing:.02em; text-shadow:0 4px 0 rgba(0,0,0,.18), 0 0 30px rgba(255,255,255,.4); }
+  #banner .s{ font-size:16px; letter-spacing:.1em; opacity:.95; margin-top:4px; color:#fff3b0; }
+  @keyframes bannerIn{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(.8); }
+    12%{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+    75%{ opacity:1; }
+    100%{ opacity:0; transform:translate(-50%,-60%) scale(1); }
+  }
+
+  /* ---------- overlay screens ---------- */
+  .screen{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:2px;
+    opacity:0; pointer-events:none; transition:opacity .4s ease;
+    text-align:center; padding:24px;
+  }
+  .screen.on{ opacity:1; }
+  .card{
+    padding:26px 40px 30px; border-radius:28px;
+    background:rgba(12,20,44,.30);
+    box-shadow:0 10px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.28);
+    backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px);
+    text-shadow:0 2px 4px rgba(0,0,0,.32);
+    max-width:min(560px, 92vw);
+  }
+  #logo{ display:block; margin:0 auto 6px; width:min(430px,78vw); height:auto; filter:drop-shadow(0 6px 14px rgba(0,0,0,.3)); }
+  .tag{ font-size:15px; letter-spacing:.16em; opacity:.92; margin-bottom:18px; text-transform:uppercase; }
+  .how{ font-size:15px; line-height:1.65; font-weight:700; opacity:.95; }
+  .how b{ color:#ffe082; }
+  .cta{
+    display:inline-block; margin-top:20px; padding:13px 30px; border-radius:999px;
+    font-size:19px; letter-spacing:.08em;
+    background:linear-gradient(180deg,#ffd66e,#ffab2e);
+    color:#5a3200; text-shadow:0 1px 0 rgba(255,255,255,.5);
+    box-shadow:0 5px 0 #d1791a, 0 10px 20px rgba(0,0,0,.25);
+    animation:bob 1.5s ease-in-out infinite alternate;
+  }
+  @keyframes bob{ from{ transform:translateY(0);} to{ transform:translateY(-5px);} }
+  .rowline{ display:flex; justify-content:space-between; gap:26px; font-size:17px; padding:7px 2px;
+            border-bottom:1px dashed rgba(255,255,255,.18); }
+  .rowline:last-child{ border-bottom:none; }
+  .rowline .k{ opacity:.85; font-weight:700; letter-spacing:.06em; }
+  .rowline .v{ font-variant-numeric:tabular-nums; }
+  .big2{ font-size:52px; line-height:1.05; }
+  .sub{ font-size:13px; letter-spacing:.2em; opacity:.8; text-transform:uppercase; }
+  .nest{ margin-top:14px; font-size:13px; letter-spacing:.08em; opacity:.9; font-weight:700; }
+  .nest b{ color:#ffe082; }
+  #newbest{ color:#ffe082; font-size:16px; letter-spacing:.24em; margin-top:6px; opacity:0; }
+  #newbest.on{ opacity:1; animation:pulse .6s ease-in-out infinite alternate; }
+  /* speed tunnel: a vignette that closes in as you go faster */
+  #rush{ position:absolute; inset:0; opacity:0; transition:opacity .12s linear;
+         box-shadow:inset 0 0 190px 70px rgba(2,8,24,.72); }
+  #rush.fev{ box-shadow:inset 0 0 190px 70px rgba(60,20,0,.66); }
+
+  /* day / night trip pills on the title screen */
+  .modes{ display:flex; gap:10px; justify-content:center; margin-top:16px; pointer-events:auto; }
+  .pill{ padding:8px 20px; border-radius:999px; font-size:13px; letter-spacing:.14em;
+         text-transform:uppercase; cursor:pointer;
+         background:rgba(255,255,255,.14); box-shadow:inset 0 0 0 2px rgba(255,255,255,.22);
+         transition:all .18s ease; }
+  .pill:hover{ background:rgba(255,255,255,.24); }
+  .pill.sel{ background:rgba(255,255,255,.92); color:#1d3557; box-shadow:0 3px 0 rgba(0,0,0,.18); }
+
+  /* narrow screens: shrink the HUD so three panels still fit a phone width */
+  @media (max-width: 620px){
+    .panel{ padding:6px 10px 7px; border-radius:13px; }
+    #pDist, #pScore{ min-width:0; }
+    .val{ font-size:20px; }
+    .val small{ font-size:11px; }
+    .lbl{ font-size:9px; letter-spacing:.10em; }
+    #pIsland .val{ font-size:16px; }
+    #meterWrap, #nightWrap{ width:41vw; top:66px; }
+    #banner .t{ font-size:31px; }
+    #banner .n{ font-size:12px; }
+    .pop{ font-size:22px; } .pop.big{ font-size:32px; } .pop.small{ font-size:16px; }
+    .card{ padding:20px 22px 24px; border-radius:22px; }
+    .how{ font-size:13px; } .big2{ font-size:40px; } .rowline{ font-size:15px; gap:14px; }
+  }
+
+  #loading{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+            background:#0b1020; color:#8fa; font-size:14px; letter-spacing:.3em; z-index:9; }
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+
+<div id="ui">
+  <!-- HUD -->
+  <div class="hud" id="hud">
+    <div class="panel" id="pDist"><div class="lbl">Distance</div><div class="val"><span id="vDist">0</span><small> m</small></div></div>
+    <div class="panel" id="pScore"><div class="lbl">Score</div><div class="val"><span id="vScore">0</span></div></div>
+    <div class="panel" id="pIsland"><div class="lbl">Island</div><div class="val" id="vIsland">1</div></div>
+
+    <div id="meterWrap">
+      <div id="meterBg"><div id="meterFill"></div></div>
+      <div id="chain">
+        <div class="dot" id="d0"></div><div class="dot" id="d1"></div><div class="dot" id="d2"></div>
+        <div id="feverTag">FEVER ×2</div>
+      </div>
+    </div>
+
+    <div id="nightWrap">
+      <div id="nightBg"><div id="nightFill"></div></div>
+      <div id="nightLbl">Night is coming</div>
+    </div>
+
+    <div id="raceWrap">
+      <div id="raceTrack"></div>
+      <div id="raceLine"><b id="racePlace">1st</b> <span id="raceGap"></span></div>
+    </div>
+
+    <div id="rush"></div>
+    <div id="pops"></div>
+    <div id="banner"><div class="n" id="bnTop">ISLAND 1</div><div class="t" id="bnName">Meadow</div><div class="s" id="bnBonus"></div></div>
+  </div>
+
+  <!-- TITLE -->
+  <div class="screen on" id="scTitle">
+    <div class="card">
+      <canvas id="logo" width="860" height="260"></canvas>
+      <div class="tag">A Day Trip</div>
+      <div class="how">
+        Hold <b>anywhere</b> (or <b>Space</b>) to dive.<br>
+        Dive into the <b>downhill</b> to build speed &mdash; let go on the <b>uphill</b> to fly.<br>
+        Slide a whole valley without bouncing for a <b>Great Slide</b>.<br>
+        Three in a row starts <b>Fever</b>. Fly far before <b>night</b> catches you.
+      </div>
+      <div class="modes">
+        <div class="pill sel" id="pillDay">Day Trip</div>
+        <div class="pill" id="pillNight">Night Trip</div>
+        <div class="pill" id="pillRace">Race</div>
+      </div>
+      <div class="how" id="raceHow" style="display:none; margin-top:12px">
+        <b>Race</b> three other birds over <b>600 m</b> of the same islands.
+      </div>
+      <div class="cta" id="ctaStart">Tap / Space to fly</div>
+      <div class="nest" id="titleNest"></div>
+      <div class="nest" id="titleBest"></div>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="screen" id="scEnd">
+    <div class="card">
+      <div class="sub" id="endWhy">The sun has set</div>
+      <div class="big2" id="endDist">0 m</div>
+      <div id="newbest">NEW BEST!</div>
+      <div id="endRaceBox"></div>
+      <div style="height:14px"></div>
+      <div class="rowline"><span class="k">Score</span><span class="v" id="endScore">0</span></div>
+      <div class="rowline" id="rowIsl"><span class="k">Islands reached</span><span class="v" id="endIsl">1</span></div>
+      <div class="rowline"><span class="k">Great slides</span><span class="v" id="endSlides">0</span></div>
+      <div class="rowline"><span class="k">Coins / clouds</span><span class="v" id="endPick">0 / 0</span></div>
+      <div class="rowline"><span class="k">Top speed</span><span class="v" id="endSpeed">0</span></div>
+      <div class="rowline"><span class="k">Best distance</span><span class="v" id="endBest">0 m</span></div>
+      <div class="cta" id="ctaAgain">Tap / Space to fly again</div>
+      <div class="nest" id="endNest"></div>
+    </div>
+  </div>
+</div>
+
+<div id="loading">LOADING</div>
+
+<script type="module">
+  import { boot } from './src/main.js';
+  boot().catch(err => {
+    console.error(err);
+    const l = document.getElementById('loading');
+    if (l) { l.style.color = '#f88'; l.textContent = 'ERROR: ' + (err && err.message ? err.message : err); }
+  });
+</script>
+</body>
+</html>

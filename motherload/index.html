@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOTHERLOAD</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #07070a; overflow: hidden;
+    font-family: "Lucida Console", "Consolas", monospace;
+  }
+  :root {
+    --stage-w: 960;
+    --stage-h: 600;
+    /* Breathing room the stage is never allowed to grow into: a gutter on three
+       sides, and a band at the bottom that belongs to the #hint line. */
+    --gutter: 16px;
+    --hint-band: 40px;
+    /* The area the stage is fitted into, viewport minus that reserved room. */
+    --avail-w: calc(100vw - var(--gutter) * 2);
+    --avail-h: calc(100vh - var(--gutter) - var(--hint-band));
+  }
+  #wrap {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: var(--gutter) var(--gutter) var(--hint-band); box-sizing: border-box;
+    background: radial-gradient(ellipse at 50% 0%, #16171f 0%, #06060a 70%);
+  }
+  /*
+    The stage is a fixed 960x600 backbuffer scaled up to CONTAIN it in the
+    window -- min(availW/960, availH/600), never exceeding either axis -- and
+    centred, so all 600 rows and 960 columns are always on screen with a margin
+    to spare. Filling the window exactly instead put the stage edges flush with
+    the frame and pushed the #hint line on top of the stage's bottom rows.
+    Every pointer coordinate maps back through getBoundingClientRect, so the
+    game itself never sees the scale factor.
+  */
+  canvas#game {
+    display: block;
+    width: min(var(--avail-w), calc(var(--avail-h) * var(--stage-w) / var(--stage-h)));
+    height: min(var(--avail-h), calc(var(--avail-w) * var(--stage-h) / var(--stage-w)));
+    box-shadow: 0 0 0 2px #2a2c38, 0 0 40px rgba(0,0,0,0.9);
+    cursor: crosshair;
+  }
+  #hint {
+    position: absolute; bottom: 2px; left: 0; right: 0; text-align: center;
+    color: #3a3d4a; font-size: 10px; letter-spacing: 1px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div id="wrap"><canvas id="game" width="960" height="600"></canvas></div>
+  <div id="hint">ARROWS / WASD thrust + drill &nbsp;|&nbsp; X / C explosives &nbsp;|&nbsp; Q teleporter &nbsp;|&nbsp; M transmitter &nbsp;|&nbsp; F fuel &nbsp;|&nbsp; R nanobots &nbsp;|&nbsp; E vendor &nbsp;|&nbsp; I inventory &nbsp;|&nbsp; O options &nbsp;|&nbsp; ESC pause</div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
